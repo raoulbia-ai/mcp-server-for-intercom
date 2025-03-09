@@ -1,0 +1,53 @@
+{
+  "name": "mcp-server-for-intercom",
+  "version": "1.0.0",
+  "description": "MCP-compliant server for retrieving customer support tickets from Intercom",
+  "main": "build/index.js",
+  "type": "module",
+  "bin": {
+    "intercom-mcp": "./build/index.js"
+  },
+  "scripts": {
+    "clean": "rimraf build",
+    "prebuild": "npm run clean",
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "start": "node build/index.js",
+    "dev": "npm run build && node build/index.js",
+    "test": "mocha --loader=ts-node/esm 'tests/**/*.test.ts'",
+    "test:watch": "mocha --loader=ts-node/esm 'tests/**/*.test.ts' --watch",
+    "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts'",
+    "prepare": "npm run build"
+  },
+  "files": [
+    "build"
+  ],
+  "keywords": [
+    "intercom",
+    "mcp",
+    "model-context-protocol",
+    "customer-support",
+    "ai-assistant"
+  ],
+  "author": "Raoul Biagioni",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/chai": "^5.0.1",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.10.5",
+    "@types/sinon": "^17.0.3",
+    "chai": "^5.1.2",
+    "mocha": "^11.0.1",
+    "rimraf": "^5.0.10",
+    "sinon": "^19.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.2"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.3",
+    "zod": "^3.22.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

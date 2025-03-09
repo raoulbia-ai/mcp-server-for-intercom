@@ -1,0 +1,76 @@
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# TypeScript compiled output
+build/
+dist/
+lib/
+out/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# IDE/Editor specific
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Test-specific files
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.pid
+*.seed
+*.pid.lock
+.lock-wscript
+
+# Docker volumes
+**/volumes/
+volumes/
+
+# Yarn integrity file
+.yarn-integrity
+
+# Package-lock files (if using yarn as primary package manager)
+# package-lock.json
+
+# Debug directory
+.debug/
+
+# API keys and secrets
+*.pem
+*.key
+*.cert
+
+# Project specific files
+memory-bank/
