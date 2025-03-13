@@ -8,7 +8,7 @@ import { ToolHandlers } from "./toolHandlers.js";
 export function setupRequestHandlers(server: Server, toolHandlers: ToolHandlers) {
     // List Tools Handler
     server.setRequestHandler(ListToolsRequestSchema, async () => {
-        console.log("Received list_tools request");
+        console.error("Received list_tools request");
         return {
             tools: [
                 {
@@ -79,15 +79,15 @@ Response format:
     // Call Tool Handler
     server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const { name, arguments: args } = request.params;
-        console.log(`Received call_tool request for tool: ${name}`);
+        console.error(`Received call_tool request for tool: ${name}`);
     
         try {
             switch (name) {
                 case "list_tickets":
-                    console.log("Handling list_tickets request");
+                    console.error("Handling list_tickets request");
                     return await toolHandlers.handleListTickets(args);
                 default:
-                    console.log(`Error: Unknown tool "${name}"`);
+                    console.error(`Error: Unknown tool "${name}"`);
                     throw new Error(`Unknown tool: ${name}`);
             }
         } catch (error) {

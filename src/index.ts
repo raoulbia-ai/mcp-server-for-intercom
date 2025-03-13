@@ -10,7 +10,8 @@ import { SecureStdioTransport } from "./services/transportService.js";
  */
 async function main() {
     try {
-        console.log("Starting Intercom MCP Server...");
+        // Log to stderr instead of stdout to avoid interfering with the JSON-RPC protocol
+        console.error("Starting Intercom MCP Server...");
         
         const transport = new SecureStdioTransport();
         const server = new Server(
@@ -20,7 +21,20 @@ async function main() {
             },
             {
                 capabilities: {
-                    tools: {},
+                    tools: {
+                        list_tickets: {
+                            description: "Retrieves all support tickets (open and closed) with full conversation history from Intercom.",
+                            parameters: {
+                                type: "object",
+                                properties: {
+                                    cutoffDate: {
+                                        type: "string",
+                                        description: "ISO format date (e.g., '2024-01-01T00:00:00Z'). Only returns tickets created after this date. Defaults to January 1st of the current year if not specified."
+                                    }
+                                }
+                            }
+                        }
+                    },
                 },
             }
         );
@@ -31,19 +45,19 @@ async function main() {
         const API_BASE_URL = CONFIGURED_API_URL || "https://api.intercom.io";
 
         if (CONFIGURED_API_URL) {
-            console.log(`Using custom Intercom API URL: ${CONFIGURED_API_URL}`);
+            console.error(`Using custom Intercom API URL: ${CONFIGURED_API_URL}`);
             setApiBaseUrl(CONFIGURED_API_URL);
         } else {
-            console.log(`Using default Intercom API URL: ${API_BASE_URL}`);
+            console.error(`Using default Intercom API URL: ${API_BASE_URL}`);
         }
 
         if (API_TOKEN) {
-            console.log("Intercom access token found");
+            console.error("Intercom access token found");
             setServerConfig({ authToken: API_TOKEN });
         } else {
-            console.warn('WARNING: INTERCOM_ACCESS_TOKEN environment variable not set. API calls will fail.');
-            console.log('Please set the INTERCOM_ACCESS_TOKEN environment variable with your Intercom API token.');
-            console.log('Example: export INTERCOM_ACCESS_TOKEN="your_token_here"');
+            console.error('WARNING: INTERCOM_ACCESS_TOKEN environment variable not set. API calls will fail.');
+            console.error('Please set the INTERCOM_ACCESS_TOKEN environment variable with your Intercom API token.');
+            console.error('Example: export INTERCOM_ACCESS_TOKEN="your_token_here"');
         }
 
         // Create tool handlers instance
@@ -53,12 +67,12 @@ async function main() {
         setupRequestHandlers(server, toolHandlers);
 
         // Connect transport
-        console.log("Connecting MCP transport...");
+        console.error("Connecting MCP transport...");
         await server.connect(transport);
         
-        console.log('✅ Intercom MCP Server started successfully and ready to process requests.');
-        console.log('The server provides the following MCP tools:');
-        console.log('- list_tickets: Retrieves all support tickets with conversation history');
+        console.error('✅ Intercom MCP Server started successfully and ready to process requests.');
+        console.error('The server provides the following MCP tools:');
+        console.error('- list_tickets: Retrieves all support tickets with conversation history');
     } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
         console.error('❌ Server failed to start:', errorMessage);

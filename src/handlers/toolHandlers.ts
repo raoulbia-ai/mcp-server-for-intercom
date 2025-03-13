@@ -16,21 +16,21 @@ export class ToolHandlers {
      */
     async handleListTickets(args: unknown) {
         try {
-            console.log("Handling list_tickets request with args:", JSON.stringify(args));
+            console.error("Handling list_tickets request with args:", JSON.stringify(args));
             
             // Validate and parse arguments
             const validatedArgs = ListTicketsArgumentsSchema.parse(args);
-            console.log(`Using cutoff date: ${validatedArgs.cutoffDate}`);
+            console.error(`Using cutoff date: ${validatedArgs.cutoffDate}`);
             
             // Create Intercom service
-            console.log("Initializing Intercom service...");
+            console.error("Initializing Intercom service...");
             const intercomService = new IntercomService(this.API_BASE_URL, this.authToken);
             
             // Get tickets with conversation history
-            console.log("Retrieving tickets from Intercom...");
+            console.error("Retrieving tickets from Intercom...");
             const tickets = await intercomService.getTickets(validatedArgs.cutoffDate);
             
-            console.log(`Successfully retrieved ${tickets.length} tickets`);
+            console.error(`Successfully retrieved ${tickets.length} tickets`);
             
             // Return in the MCP-compliant format with content array
             return {

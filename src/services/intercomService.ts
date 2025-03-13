@@ -24,7 +24,7 @@ export class IntercomService {
             let page = 1;
             let morePages = true;
             
-            console.log("Retrieving all conversations...");
+            console.error("Retrieving all conversations...");
             
             while (morePages) {
                 // Set up pagination parameters
@@ -36,7 +36,7 @@ export class IntercomService {
                     params['starting_after'] = startingAfter;
                 }
                 
-                console.log(`Retrieving page ${page}...`);
+                console.error(`Retrieving page ${page}...`);
                 
                 // Get tickets with pagination
                 const response = await this.makeRequest<{
@@ -49,7 +49,7 @@ export class IntercomService {
                     break;
                 }
                 
-                console.log(`Retrieved page ${page} with ${response.conversations.length} conversations`);
+                console.error(`Retrieved page ${page} with ${response.conversations.length} conversations`);
                 
                 // Process conversation data into ticket format
                 const tickets = this.convertToTickets(response.conversations, formattedCutoffDate);
@@ -72,7 +72,7 @@ export class IntercomService {
                 }
             }
             
-            console.log(`Total conversations retrieved: ${allTickets.length}`);
+            console.error(`Total conversations retrieved: ${allTickets.length}`);
             
             // Get full conversation history for each ticket
             const ticketsWithConversations = await this.addConversationHistories(allTickets);
@@ -126,11 +126,11 @@ export class IntercomService {
         const ticketsWithConversations: Ticket[] = [];
         const total = tickets.length;
         
-        console.log(`\nExtracting full conversation history for ${total} conversations...`);
+        console.error(`\nExtracting full conversation history for ${total} conversations...`);
         
         for (let i = 0; i < tickets.length; i++) {
             const ticket = tickets[i];
-            console.log(`Processing conversation ${i+1}/${total} (ID: ${ticket.ticket_id})`);
+            console.error(`Processing conversation ${i+1}/${total} (ID: ${ticket.ticket_id})`);
             
             const conversation = await this.getConversationHistory(ticket.ticket_id);
             ticketsWithConversations.push({
@@ -198,7 +198,7 @@ export class IntercomService {
             // Check if we're hitting the 500 conversation parts limit (as mentioned in Python script)
             const totalCount = response.conversation_parts.total_count;
             if (totalCount === 500) {
-                console.log(`WARNING: Conversation ${ticketId} has reached the 500 parts limit. Some older messages may be missing.`);
+                console.error(`WARNING: Conversation ${ticketId} has reached the 500 parts limit. Some older messages may be missing.`);
             }
             
             return messages;
@@ -207,7 +207,7 @@ export class IntercomService {
             
             // Try alternate URL format as in Python script
             if (error instanceof Error && error.message.includes('404')) {
-                console.log(`Conversation ${ticketId} not found (404). Trying alternate URL format...`);
+                console.error(`Conversation ${ticketId} not found (404). Trying alternate URL format...`);
                 try {
                     const alternateResponse = await this.makeRequest<{
                         id: string;
