@@ -1,4 +1,4 @@
-import { ListTicketsArgumentsSchema } from "../types/schemas.js";
+import { ListTicketsArgumentsSchema, getDateRange } from "../types/schemas.js";
 import { IntercomService } from "../services/intercomService.js";
 
 export class ToolHandlers {
@@ -6,6 +6,14 @@ export class ToolHandlers {
     private readonly authToken: string;
 
     constructor(apiBaseUrl: string, authToken: string) {
+        if (!apiBaseUrl || typeof apiBaseUrl !== 'string' || !apiBaseUrl.trim()) {
+            throw new Error('Invalid API base URL: API base URL is required');
+        }
+        
+        if (!authToken || typeof authToken !== 'string' || !authToken.trim()) {
+            throw new Error('Invalid authentication token: Auth token is required');
+        }
+        
         this.API_BASE_URL = apiBaseUrl;
         this.authToken = authToken;
     }
@@ -18,9 +26,47 @@ export class ToolHandlers {
         try {
             console.error("Handling list_tickets request with args:", JSON.stringify(args));
             
-            // Validate and parse arguments
+            // Log raw arguments for debugging
+            console.error("Raw arguments:", JSON.stringify(args, null, 2));
+            
+            // All parameter transformation is now done in the schema transform function
+            
+            // Validate and parse arguments with our simplified schema
             const validatedArgs = ListTicketsArgumentsSchema.parse(args);
-            console.error(`Using cutoff date: ${validatedArgs.cutoffDate}`);
+            console.error("Validated arguments:", JSON.stringify(validatedArgs, null, 2));
+            
+            // Use explicit start/end dates if provided, otherwise calculate from other parameters
+            let startDateStr: string;
+            let endDateStr: string;
+            
+            if (validatedArgs.startDate && validatedArgs.endDate) {
+                startDateStr = validatedArgs.startDate;
+                endDateStr = validatedArgs.endDate;
+                console.error(`Using explicit date range: ${startDateStr} to ${endDateStr}`);
+            } else {
+                const dateRange = getDateRange({
+                    yyyymm: validatedArgs.yyyymm,
+                    days: validatedArgs.days
+                });
+                startDateStr = dateRange.startDate;
+                endDateStr = dateRange.endDate;
+            }
+            
+            if (validatedArgs.yyyymm) {
+                console.error(`Using month filter: ${validatedArgs.yyyymm}`);
+            } else if (validatedArgs.days) {
+                console.error(`Using last ${validatedArgs.days} days filter`);
+            }
+            
+            console.error(`Date range: ${startDateStr} to ${endDateStr}`);
+            
+            if (validatedArgs.keyword) {
+                console.error(`Using keyword filter: ${validatedArgs.keyword}`);
+            }
+            
+            if (validatedArgs.exclude) {
+                console.error(`Using exclusion filter: ${validatedArgs.exclude}`);
+            }
             
             // Create Intercom service
             console.error("Initializing Intercom service...");
@@ -28,7 +74,12 @@ export class ToolHandlers {
             
             // Get tickets with conversation history
             console.error("Retrieving tickets from Intercom...");
-            const tickets = await intercomService.getTickets(validatedArgs.cutoffDate);
+            const tickets = await intercomService.getTickets(
+                startDateStr, 
+                endDateStr, 
+                validatedArgs.keyword, 
+                validatedArgs.exclude
+            );
             
             console.error(`Successfully retrieved ${tickets.length} tickets`);
             

@@ -22,21 +22,59 @@ export function setupRequestHandlers(server: Server, toolHandlers: ToolHandlers)
 - When needing to search through historical customer issues
 
 Tool Description:
-Retrieves all support tickets (open and closed) with full conversation history from Intercom.
+Retrieves support tickets (open and closed) with full conversation history from Intercom with flexible date filtering and content filtering options.
 
-Optional parameters:
-- cutoffDate: ISO format date (e.g., "2024-01-01T00:00:00Z")
-  Only returns tickets created after this date
-  Defaults to January 1st of the current year if not specified
+Date Parameters (in order of precedence):
+- startDate + endDate: Explicit date range using ISO format dates
+  Example: startDate: "2025-02-01T00:00:00Z", endDate: "2025-02-07T00:00:00Z"
+  Returns tickets created within this exact date range
+  
+  If only startDate is provided, endDate defaults to 7 days later
+  If only endDate is provided, startDate defaults to 7 days earlier
+  
+- yyyymm: Year and month in format YYYYMM (e.g., "202502" for February 2025)
+  Only returns tickets created during this month
+  Used only if startDate/endDate not provided
+  
+- days: Number of recent days to include (e.g., 4 for tickets from the last 4 days)
+  Value must be positive and no more than 90 days
+  Used only if startDate/endDate and yyyymm not provided
+  
+Content Filter Parameters:
+- keyword: Optional text to filter tickets by content
+  Only returns tickets where the subject or message body contains this text
+- exclude: Optional exclusion filter
+  Excludes tickets where the subject or message body contains this text
 
 How filtering works:
-- The server retrieves all conversations from Intercom
-- Only tickets created on or after the cutoffDate are included
-- This allows for efficient filtering without hitting API limits
+- The server retrieves conversations from Intercom for the specified date range
+- All filtering (by date, keyword, and exclusions) happens server-side
+- Each message in conversations is also filtered for keywords and exclusions
 
-Example usage:
+Example usage with explicit date range:
 {
-  "cutoffDate": "2024-02-01T00:00:00Z"
+  "startDate": "2025-02-01T00:00:00Z",
+  "endDate": "2025-02-07T00:00:00Z",
+  "keyword": "billing"
+}
+
+Example usage with month filter:
+{
+  "yyyymm": "202502",
+  "keyword": "billing",
+  "exclude": "internal@company.com"
+}
+
+Example usage with days filter:
+{
+  "days": 4,
+  "keyword": "billing"
+}
+
+Example usage with only startDate (endDate will default to 7 days later):
+{
+  "startDate": "2025-02-01T00:00:00Z",
+  "keyword": "billing"
 }
 
 Response format:
@@ -65,9 +103,25 @@ Response format:
                     inputSchema: {
                         type: "object",
                         properties: {
+                            yyyymm: {
+                                type: "string",
+                                description: "Year and month in format YYYYMM (e.g., '202502' for February 2025). Only returns tickets created during this month. Defaults to current month if neither date parameter is specified."
+                            },
+                            days: {
+                                type: "number",
+                                description: "Number of recent days to include (e.g., 4 for tickets from the last 4 days). Value must be positive and no more than 90 days."
+                            },
                             cutoffDate: {
                                 type: "string",
-                                description: "ISO format date (e.g., '2024-01-01T00:00:00Z'). Only returns tickets created after this date. Defaults to January 1st of the current year if not specified."
+                                description: "Legacy parameter - ISO format date (e.g., '2025-02-01T00:00:00Z'). Will be automatically converted to appropriate yyyymm or days parameter."
+                            },
+                            keyword: {
+                                type: "string",
+                                description: "Optional keyword to filter tickets. Only returns tickets where the subject or body contains this keyword."
+                            },
+                            exclude: {
+                                type: "string",
+                                description: "Optional exclusion filter. Excludes tickets where the subject or body contains this text (e.g., email address for internal tickets)."
                             }
                         }
                     },
