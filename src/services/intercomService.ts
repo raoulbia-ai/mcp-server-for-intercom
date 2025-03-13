@@ -6,6 +6,10 @@ export class IntercomService {
     private readonly MAX_RETRIES = 3;
     private readonly RETRY_DELAY = 1000; // 1 second
     private readonly ITEMS_PER_PAGE = 150; // Based on Python script maximum
+    private readonly CONCURRENT_REQUESTS = 5; // Maximum number of concurrent requests
+    private readonly BATCH_SIZE = 10; // Number of tickets to process in a batch
+    private readonly PROGRESS_INTERVAL = 10; // Log progress every X tickets
+    private readonly OPTIMIZATION_THRESHOLD = 50; // Threshold for using optimized processing
 
     constructor(apiBaseUrl: string, authToken: string) {
         this.API_BASE_URL = apiBaseUrl;
@@ -13,18 +17,21 @@ export class IntercomService {
     }
 
     /**
-     * Retrieves all tickets with conversation history after the provided cutoff date
-     * Uses pagination to fetch all tickets
+     * Retrieves tickets with conversation history for a specific date range,
+     * with optional keyword filtering and exclusion, optimized for large volumes
      */
-    async getTickets(cutoffDate: string): Promise<Ticket[]> {
+    async getTickets(startDate: string, endDate: string, keyword?: string, exclude?: string): Promise<Ticket[]> {
         try {
-            const formattedCutoffDate = new Date(cutoffDate);
+            const startDateObj = new Date(startDate);
+            const endDateObj = new Date(endDate);
             let allTickets: Ticket[] = [];
             let startingAfter: string | null = null;
             let page = 1;
             let morePages = true;
             
-            console.log("Retrieving all conversations...");
+            console.error(`Retrieving conversations between ${startDate} and ${endDate}...`);
+            if (keyword) console.error(`Filtering by keyword: "${keyword}"`);
+            if (exclude) console.error(`Excluding conversations containing: "${exclude}"`);
             
             while (morePages) {
                 // Set up pagination parameters
@@ -36,7 +43,7 @@ export class IntercomService {
                     params['starting_after'] = startingAfter;
                 }
                 
-                console.log(`Retrieving page ${page}...`);
+                console.error(`Retrieving page ${page}...`);
                 
                 // Get tickets with pagination
                 const response = await this.makeRequest<{
@@ -49,10 +56,10 @@ export class IntercomService {
                     break;
                 }
                 
-                console.log(`Retrieved page ${page} with ${response.conversations.length} conversations`);
+                console.error(`Retrieved page ${page} with ${response.conversations.length} conversations`);
                 
                 // Process conversation data into ticket format
-                const tickets = this.convertToTickets(response.conversations, formattedCutoffDate);
+                const tickets = this.convertToTickets(response.conversations, startDateObj, endDateObj, keyword, exclude);
                 allTickets = [...allTickets, ...tickets];
                 
                 // Get next page URL if it exists
@@ -72,10 +79,10 @@ export class IntercomService {
                 }
             }
             
-            console.log(`Total conversations retrieved: ${allTickets.length}`);
+            console.error(`Total conversations retrieved: ${allTickets.length}`);
             
             // Get full conversation history for each ticket
-            const ticketsWithConversations = await this.addConversationHistories(allTickets);
+            const ticketsWithConversations = await this.addConversationHistories(allTickets, keyword, exclude);
             
             return ticketsWithConversations;
         } catch (error) {
@@ -86,13 +93,39 @@ export class IntercomService {
 
     /**
      * Converts Intercom conversation objects to our Ticket format
-     * Filters by cutoff date
+     * Filters by date range, keyword, and exclusion criteria
      */
-    private convertToTickets(conversations: IntercomConversation[], cutoffDate: Date): Ticket[] {
+    private convertToTickets(
+        conversations: IntercomConversation[], 
+        startDate: Date, 
+        endDate: Date,
+        keyword?: string,
+        exclude?: string
+    ): Ticket[] {
         return conversations
             .filter(conversation => {
                 const createdAt = new Date(conversation.created_at * 1000); // Convert Unix timestamp to Date
-                return createdAt >= cutoffDate;
+                
+                // Date range filter
+                const isInDateRange = createdAt >= startDate && createdAt < endDate;
+                if (!isInDateRange) return false;
+                
+                // Get conversation text for content filtering
+                const title = conversation.source?.title || '';
+                const body = conversation.source?.body || '';
+                const fullText = `${title} ${body}`.toLowerCase();
+                
+                // Keyword filter (if provided)
+                if (keyword && !fullText.includes(keyword.toLowerCase())) {
+                    return false;
+                }
+                
+                // Exclusion filter (if provided)
+                if (exclude && fullText.includes(exclude.toLowerCase())) {
+                    return false;
+                }
+                
+                return true;
             })
             .map(conversation => ({
                 ticket_id: conversation.id,
@@ -120,37 +153,192 @@ export class IntercomService {
     }
 
     /**
-     * Adds full conversation history to each ticket
+     * Adds full conversation history to each ticket with optional keyword and exclusion filtering
+     * Optimized for better performance with parallel processing and batching
      */
-    private async addConversationHistories(tickets: Ticket[]): Promise<Ticket[]> {
-        const ticketsWithConversations: Ticket[] = [];
+    private async addConversationHistories(
+        tickets: Ticket[], 
+        keyword?: string, 
+        exclude?: string
+    ): Promise<Ticket[]> {
         const total = tickets.length;
+        console.error(`\nExtracting full conversation history for ${total} conversations...`);
         
-        console.log(`\nExtracting full conversation history for ${total} conversations...`);
+        // If we have a small number of tickets, process them directly
+        if (total <= this.BATCH_SIZE) {
+            return this.processTicketBatch(tickets, 0, total, keyword, exclude);
+        }
         
-        for (let i = 0; i < tickets.length; i++) {
-            const ticket = tickets[i];
-            console.log(`Processing conversation ${i+1}/${total} (ID: ${ticket.ticket_id})`);
+        // For larger sets, process in optimized batches
+        const ticketsWithConversations: Ticket[] = [];
+        let processedCount = 0;
+        
+        // Process tickets in batches to control memory usage
+        for (let i = 0; i < tickets.length; i += this.BATCH_SIZE) {
+            console.error(`Processing batch ${Math.floor(i/this.BATCH_SIZE) + 1}/${Math.ceil(tickets.length/this.BATCH_SIZE)}...`);
             
-            const conversation = await this.getConversationHistory(ticket.ticket_id);
-            ticketsWithConversations.push({
-                ...ticket,
-                conversation
-            });
+            const batchEnd = Math.min(i + this.BATCH_SIZE, tickets.length);
+            const batchTickets = tickets.slice(i, batchEnd);
             
-            // Add slight delay to prevent rate limiting (following Python script's pattern)
-            if (i < total - 1) {
-                await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 seconds as in Python script
+            // Process the current batch with concurrency
+            const batchResults = await this.processTicketBatch(
+                batchTickets, 
+                processedCount,
+                total,
+                keyword, 
+                exclude
+            );
+            
+            ticketsWithConversations.push(...batchResults);
+            processedCount += batchResults.length;
+            
+            // Add delay between batches to manage rate limits
+            if (i + this.BATCH_SIZE < tickets.length) {
+                console.error(`Batch complete. Taking a short break before next batch...`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
             }
         }
         
+        console.error(`Completed processing ${processedCount} conversations`);
         return ticketsWithConversations;
+    }
+    
+    /**
+     * Process a batch of tickets with concurrent requests
+     */
+    private async processTicketBatch(
+        tickets: Ticket[],
+        startIndex: number,
+        totalTickets: number,
+        keyword?: string,
+        exclude?: string
+    ): Promise<Ticket[]> {
+        const results: Ticket[] = [];
+        const batches: Ticket[][] = [];
+        
+        // Split batch into smaller groups for concurrent processing
+        for (let i = 0; i < tickets.length; i += this.CONCURRENT_REQUESTS) {
+            batches.push(tickets.slice(i, i + this.CONCURRENT_REQUESTS));
+        }
+        
+        // Process each mini-batch concurrently
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+            const batch = batches[batchIndex];
+            const batchPromises = batch.map(async (ticket, index) => {
+                const globalIndex = startIndex + (batchIndex * this.CONCURRENT_REQUESTS) + index + 1;
+                
+                try {
+                    console.error(`Processing conversation ${globalIndex}/${totalTickets} (ID: ${ticket.ticket_id})`);
+                    const conversation = await this.getConversationHistory(ticket.ticket_id, keyword, exclude);
+                    
+                    // Log progress at intervals
+                    if (globalIndex % this.PROGRESS_INTERVAL === 0 || globalIndex === totalTickets) {
+                        console.error(`Progress: ${globalIndex}/${totalTickets} conversations (${Math.round((globalIndex/totalTickets)*100)}%)`);
+                    }
+                    
+                    return {
+                        ...ticket,
+                        conversation
+                    };
+                } catch (error) {
+                    console.error(`Error processing ticket ${ticket.ticket_id}:`, error);
+                    // Return ticket with empty conversation on error
+                    return {
+                        ...ticket,
+                        conversation: []
+                    };
+                }
+            });
+            
+            // Wait for all concurrent requests in this mini-batch to complete
+            const batchResults = await Promise.all(batchPromises);
+            results.push(...batchResults);
+            
+            // Add a small delay between mini-batches to prevent rate limiting
+            if (batchIndex < batches.length - 1) {
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
+        }
+        
+        return results;
+    }
+
+    /**
+     * Retrieves all conversations from Intercom with efficient pagination handling
+     */
+    private async getAllConversationsWithPagination(): Promise<IntercomConversation[]> {
+        let allConversations: IntercomConversation[] = [];
+        let startingAfter: string | null = null;
+        let page = 1;
+        let retriesLeft = this.MAX_RETRIES;
+        let morePages = true;
+        
+        while (morePages) {
+            try {
+                // Set up pagination parameters
+                const params: Record<string, string> = {
+                    'per_page': this.ITEMS_PER_PAGE.toString()
+                };
+                
+                if (startingAfter) {
+                    params['starting_after'] = startingAfter;
+                }
+                
+                console.error(`Retrieving page ${page}...`);
+                
+                // Get tickets with pagination
+                const response = await this.makeRequest<{
+                    conversations: IntercomConversation[];
+                    pages: { next?: string };
+                }>('conversations', 'GET', params);
+                
+                if (!response.conversations || response.conversations.length === 0) {
+                    console.error('No more conversations found');
+                    morePages = false;
+                    break;
+                }
+                
+                console.error(`Retrieved page ${page} with ${response.conversations.length} conversations`);
+                allConversations = [...allConversations, ...response.conversations];
+                
+                // Get next page URL if it exists
+                const nextPage = response.pages?.next;
+                if (nextPage && typeof nextPage === 'string' && nextPage.includes('starting_after=')) {
+                    startingAfter = nextPage.split('starting_after=')[1].split('&')[0];
+                    morePages = true;
+                    page++;
+                    // Reset retries on successful request
+                    retriesLeft = this.MAX_RETRIES;
+                } else {
+                    console.error('No next page found, pagination complete');
+                    morePages = false;
+                }
+                
+                // Add slight delay to prevent rate limiting
+                if (morePages) {
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+            } catch (error) {
+                // Handle pagination errors with retries
+                if (retriesLeft > 0) {
+                    retriesLeft--;
+                    console.error(`Error retrieving page ${page}, retrying (${retriesLeft} retries left)...`);
+                    await new Promise(resolve => setTimeout(resolve, this.RETRY_DELAY));
+                } else {
+                    console.error(`Failed to retrieve page ${page} after multiple retries, stopping pagination`);
+                    morePages = false;
+                }
+            }
+        }
+        
+        console.error(`Pagination complete, retrieved ${allConversations.length} total conversations`);
+        return allConversations;
     }
 
     /**
      * Gets the full conversation history for a specific ticket
      */
-    private async getConversationHistory(ticketId: string): Promise<ConversationMessage[]> {
+    private async getConversationHistory(ticketId: string, keyword?: string, exclude?: string): Promise<ConversationMessage[]> {
         try {
             // Add parameters for expanded view and plaintext display as in Python script
             const params = {
@@ -176,20 +364,43 @@ export class IntercomService {
             
             // Add the initial message
             if (response.source?.body) {
-                messages.push({
-                    from: 'customer',
-                    text: response.source.body,
-                    timestamp: new Date(response.created_at * 1000).toISOString()
-                });
+                const body = response.source.body;
+                
+                // Apply keyword filter if specified
+                if (keyword && !body.toLowerCase().includes(keyword.toLowerCase())) {
+                    // Skip this message if keyword filter is active and not matched
+                } else if (exclude && body.toLowerCase().includes(exclude.toLowerCase())) {
+                    // Skip this message if exclusion filter is active and matched
+                } else {
+                    messages.push({
+                        from: 'customer',
+                        text: body,
+                        timestamp: new Date(response.created_at * 1000).toISOString()
+                    });
+                }
             }
             
             // Add conversation parts
             const conversationParts = response.conversation_parts.conversation_parts;
             conversationParts.forEach(part => {
                 if (part.body) {
+                    const body = part.body;
+                    
+                    // Apply keyword filter if specified
+                    if (keyword && !body.toLowerCase().includes(keyword.toLowerCase())) {
+                        // Skip this message if keyword filter is active and not matched
+                        return;
+                    } 
+                    
+                    // Apply exclusion filter if specified
+                    if (exclude && body.toLowerCase().includes(exclude.toLowerCase())) {
+                        // Skip this message if exclusion filter is active and matched
+                        return;
+                    }
+                    
                     messages.push({
                         from: this.determineMessageSender(part.author.type, part.part_type),
-                        text: part.body,
+                        text: body,
                         timestamp: new Date(part.created_at * 1000).toISOString()
                     });
                 }
@@ -198,7 +409,7 @@ export class IntercomService {
             // Check if we're hitting the 500 conversation parts limit (as mentioned in Python script)
             const totalCount = response.conversation_parts.total_count;
             if (totalCount === 500) {
-                console.log(`WARNING: Conversation ${ticketId} has reached the 500 parts limit. Some older messages may be missing.`);
+                console.error(`WARNING: Conversation ${ticketId} has reached the 500 parts limit. Some older messages may be missing.`);
             }
             
             return messages;
@@ -207,14 +418,14 @@ export class IntercomService {
             
             // Try alternate URL format as in Python script
             if (error instanceof Error && error.message.includes('404')) {
-                console.log(`Conversation ${ticketId} not found (404). Trying alternate URL format...`);
+                console.error(`Conversation ${ticketId} not found (404). Trying alternate URL format...`);
                 try {
                     const alternateResponse = await this.makeRequest<{
                         id: string;
                     }>(`admins/conversations/${ticketId}`, 'GET');
                     
                     if (alternateResponse && alternateResponse.id) {
-                        return this.getConversationHistory(alternateResponse.id);
+                        return this.getConversationHistory(alternateResponse.id, keyword, exclude);
                     }
                 } catch (alternateError) {
                     console.error(`Alternate URL also failed for ticket ${ticketId}:`, alternateError);
