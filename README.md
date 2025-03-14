@@ -92,24 +92,82 @@ Run tests in watch mode:
 npm run test:watch
 ```
 
+## Using the MCP Inspector
+
+The MCP Inspector is a useful tool for debugging and testing your MCP server implementation. It provides a web interface to interact with your server and visualize the requests and responses.
+
+### Installation
+
+The MCP Inspector is available as an npm package:
+
+```bash
+npm install -g @modelcontextprotocol/inspector
+```
+
+### Running the Inspector
+
+To inspect your MCP server, use the following command:
+
+```bash
+npx @modelcontextprotocol/inspector node build/index.js
+```
+
+This will:
+1. Start your MCP server
+2. Launch a web interface (typically at http://localhost:3000)
+3. Allow you to send requests and view responses
+
+### Important Notes
+
+- When using the inspector with this server, you must prefix the command with `node` as shown above
+- Make sure your environment variables (like `INTERCOM_ACCESS_TOKEN`) are set properly
+- The web interface lets you:
+  - View available tools
+  - Send test requests
+  - Debug response formatting
+  - Monitor request/response flow
+
+The inspector is particularly helpful when:
+- Implementing new tools
+- Debugging parameter handling issues
+- Testing date format validation
+- Verifying error messages
+
 ## API Reference
 
 ### `list_tickets`
 
-Retrieves all support tickets with their conversation history.
+Retrieves all support tickets with their conversation history within a specific date range.
 
 **Request Parameters:**
-- `CUTOFF_DATE` (ISO format date) – Only return tickets created after this date (optional)
+- `startDate` (DD/MM/YYYY format) – The start date for ticket retrieval (required)
+- `endDate` (DD/MM/YYYY format) – The end date for ticket retrieval (required)
+- `keyword` (string) – Optional filter to only include tickets containing this text
+- `exclude` (string) – Optional filter to exclude tickets containing this text
+
+**Important Notes:**
+- Date range must not exceed 7 days
+- Both startDate and endDate are required
+- Dates must use the DD/MM/YYYY format (e.g., "15/01/2025")
+
+**Example Request:**
+```json
+{
+  "startDate": "15/01/2025",
+  "endDate": "21/01/2025",
+  "keyword": "billing"
+}
+```
 
 **Response Format:**
-```
+```json
 {
   "result": [
     {
       "ticket_id": "12345",
       "subject": "Billing Issue",
       "status": "resolved",
-      "created_at": "2024-03-06",
+      "created_at": "2024-03-06T10:15:00Z",
       "conversation": [
         {
           "from": "customer",
