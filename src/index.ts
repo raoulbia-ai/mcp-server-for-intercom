@@ -23,33 +23,26 @@ async function main() {
                 capabilities: {
                     tools: {
                         list_tickets: {
-                            description: "Retrieves support tickets (open and closed) with full conversation history from Intercom with flexible date filtering and content filtering options.",
+                            description: "Retrieves Intercom support tickets using DD/MM/YYYY format dates (max 7 days). ALWAYS ask for specific dates when user makes vague time references.",
                             parameters: {
                                 type: "object",
+                                required: ["startDate", "endDate"],
                                 properties: {
                                     startDate: {
                                         type: "string",
-                                        description: "Start date in ISO format (e.g., '2025-02-01T00:00:00Z'). Used with endDate to specify an exact date range."
+                                        description: "REQUIRED. Start date in DD/MM/YYYY format (e.g., '15/01/2025'). Must explicitly ask for specific dates when user makes vague time references."
                                     },
                                     endDate: {
                                         type: "string",
-                                        description: "End date in ISO format (e.g., '2025-02-07T00:00:00Z'). Used with startDate to specify an exact date range."
-                                    },
-                                    yyyymm: {
-                                        type: "string",
-                                        description: "Year and month in format YYYYMM (e.g., '202502' for February 2025). Only returns tickets created during this month. Defaults to current month if no date parameter is specified."
-                                    },
-                                    days: {
-                                        type: "number",
-                                        description: "Number of recent days to include (e.g., 4 for tickets from the last 4 days). Value must be positive and no more than 90 days."
+                                        description: "REQUIRED. End date in DD/MM/YYYY format (e.g., '21/01/2025'). Must be within 7 days of startDate to prevent excessive data retrieval."
                                     },
                                     keyword: {
                                         type: "string",
-                                        description: "Optional keyword to filter tickets. Only returns tickets where the subject or body contains this keyword."
+                                        description: "OPTIONAL. Only use when explicitly asked to search for specific terms."
                                     },
                                     exclude: {
                                         type: "string",
-                                        description: "Optional exclusion filter. Excludes tickets where the subject or body contains this text (e.g., email address for internal tickets)."
+                                        description: "OPTIONAL. Only use when explicitly asked to exclude specific content."
                                     }
                                 }
                             }
@@ -94,7 +87,7 @@ async function main() {
             
             console.error('✅ Intercom MCP Server started successfully and ready to process requests.');
             console.error('The server provides the following MCP tools:');
-            console.error('- list_tickets: Retrieves support tickets for a specific month with filtering options');
+            console.error('- list_tickets: Retrieves support tickets for a specific date range (DD/MM/YYYY format) with filtering options');
         } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             console.error('❌ Server failed to start:', errorMessage);
