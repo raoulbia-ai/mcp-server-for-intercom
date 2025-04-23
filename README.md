@@ -134,6 +134,17 @@ You can run the MCP server using Docker:
 - The `--rm` flag in the run command automatically removes the container when it stops
 - No port mapping is needed as the server communicates via stdin/stdout
 
+<<<<<<< Updated upstream
+=======
+### Security Considerations
+
+- The container runs with a non-root user (service-user) for enhanced security
+- All dependencies are installed from trusted sources with version pinning
+- The Intercom API token is passed securely through environment variables
+- The container is automatically removed after stopping to prevent sensitive data persistence
+- No volumes are mounted, ensuring container isolation
+
+>>>>>>> Stashed changes
 ## Using the MCP Inspector
 
 The MCP Inspector is a useful tool for debugging and testing your MCP server implementation. It provides a web interface to interact with your server and visualize the requests and responses.
