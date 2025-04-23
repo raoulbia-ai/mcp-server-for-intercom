@@ -92,6 +92,48 @@ Run tests in watch mode:
 npm run test:watch
 ```
 
+## Using Docker
+
+You can run the MCP server using Docker:
+
+### Prerequisites
+
+- Docker installed on your system
+- Intercom API access token
+
+### Building and Running
+
+1. Build the Docker image:
+   ```bash
+   docker build -t mcp-server .
+   ```
+
+2. Run the container:
+   ```bash
+   docker run --rm -it -e INTERCOM_ACCESS_TOKEN="your_actual_api_key_here" mcp-server
+   ```
+   Replace `"your_actual_api_key_here"` with your actual Intercom access token.
+
+### Managing the Container
+
+- To list running containers:
+  ```bash
+  docker ps
+  ```
+
+- To stop a running container:
+  ```bash
+  docker stop <container_id_or_name>
+  ```
+  Replace `<container_id_or_name>` with the actual Container ID or Name from `docker ps`.
+
+### Important Notes
+
+- The container uses stdio (standard input/output) for MCP communication, not HTTP
+- This server is designed to be used by MCP-compatible LLM systems (like Claude Desktop or Cline)
+- The `--rm` flag in the run command automatically removes the container when it stops
+- No port mapping is needed as the server communicates via stdin/stdout
+
 ## Using the MCP Inspector
 
 The MCP Inspector is a useful tool for debugging and testing your MCP server implementation. It provides a web interface to interact with your server and visualize the requests and responses.
