@@ -1,5 +1,9 @@
 # MCP Server for Intercom
 
+<a href="https://glama.ai/mcp/servers/@raoulbia-ai/mcp-server-for-intercom">
+  <img width="380" height="200" src="https://glama.ai/mcp/servers/@raoulbia-ai/mcp-server-for-intercom/badge" />
+</a>
+
 An MCP-compliant server for retrieving customer support tickets from Intercom. This tool enables AI assistants like Claude Desktop and Cline to access and analyze your Intercom support tickets.
 
 ## Features
