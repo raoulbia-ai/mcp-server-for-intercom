@@ -23,7 +23,7 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Node.js
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
     apt-get install -y nodejs && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
@@ -52,5 +52,4 @@ RUN pnpm install && \
     pnpm build
 
 # Start the MCP server directly (it uses stdio for communication)
-ENV NODE_OPTIONS="--experimental-vm-modules"
-CMD ["node", "--experimental-vm-modules", "build/index.js"]
+CMD ["node", "build/index.js"]
