@@ -1,42 +1,68 @@
 {
-  "name": "Intercom MCP Server Environment Variables",
-  "description": "Environment variables for configuring the Intercom MCP server",
-  "schema": {
-    "type": "object",
-    "required": ["INTERCOM_ACCESS_TOKEN"],
-    "properties": {
-      "INTERCOM_ACCESS_TOKEN": {
-        "type": "string",
-        "description": "Your Intercom API access token, required for authentication with the Intercom API."
-      },
-      "INTERCOM_API_URL": {
-        "type": "string",
-        "description": "Base URL for the Intercom API. Optional - defaults to https://api.intercom.io if not provided.",
-        "default": "https://api.intercom.io",
-        "format": "uri"
-      },
-      "PORT": {
-        "type": "integer",
-        "description": "The port on which to run the server. Optional - defaults to 3000 if not provided.",
-        "default": 3000,
-        "minimum": 1,
-        "maximum": 65535
-      },
-      "MCP_SERVER_NAME": {
-        "type": "string",
-        "description": "Name of the MCP server for Glama compatibility. Optional - defaults to 'Intercom MCP Proxy'.",
-        "default": "Intercom MCP Proxy"
-      },
-      "MCP_SERVER_VERSION": {
-        "type": "string",
-        "description": "Version of the MCP server for Glama compatibility. Optional - defaults to '1.2.0'.",
-        "default": "1.2.0"
-      },
-      "MCP_ALLOWED_ORIGINS": {
-        "type": "string",
-        "description": "CORS allowed origins for the MCP server. Optional - defaults to '*' to allow all origins.",
-        "default": "*"
-      }
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/raoulbia-ai/mcp-server-for-intercom/schema/glama-config",
+  "title": "Intercom MCP Server Configuration",
+  "description": "Environment variables configuration for Intercom MCP Server GLAMA integration",
+  "type": "object",
+  "required": ["INTERCOM_ACCESS_TOKEN"],
+  "properties": {
+    "INTERCOM_ACCESS_TOKEN": {
+      "type": "string",
+      "description": "Intercom API access token for authentication",
+      "writeOnly": true,
+      "minLength": 64,
+      "format": "secret"
+    },
+    "INTERCOM_API_URL": {
+      "type": "string",
+      "description": "Base URL for Intercom API endpoints",
+      "default": "https://api.intercom.io",
+      "format": "uri",
+      "pattern": "^https://.+"
+    },
+    "MCP_SERVER_PORT": {
+      "type": "integer",
+      "description": "Port for MCP SSE server endpoint",
+      "default": 8080,
+      "minimum": 1024,
+      "maximum": 65535
+    },
+    "MCP_SERVER_NAME": {
+      "type": "string",
+      "description": "Service name for GLAMA discovery",
+      "default": "Intercom MCP Proxy"
+    },
+    "MCP_SERVER_VERSION": {
+      "type": "string",
+      "description": "Service version for GLAMA compatibility",
+      "default": "1.2.0",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$"
+    },
+    "MCP_ALLOWED_ORIGINS": {
+      "type": "string",
+      "description": "CORS allowed origins (comma-separated)",
+      "default": "*"
+    },
+    "INTERCOM_DEFAULT_DATE_RANGE": {
+      "type": "integer",
+      "description": "Default date range in days when no dates specified",
+      "default": 7,
+      "minimum": 1,
+      "maximum": 30
+    },
+    "INTERCOM_MAX_RESULTS": {
+      "type": "integer",
+      "description": "Maximum number of results per request",
+      "default": 100,
+      "minimum": 10,
+      "maximum": 1000
+    },
+    "INTERCOM_KEYWORD_FILTERS": {
+      "type": "string",
+      "description": "Default keyword filters (pipe-separated)",
+      "default": "urgent|priority",
+      "pattern": "^[\\w|]+$"
     }
-  }
+  },
+  "additionalProperties": false
 }
