@@ -62,10 +62,16 @@ RUN git clone https://github.com/raoulbia-ai/mcp-server-for-intercom . && \
 RUN pnpm install && \
     pnpm build
 
+# Create .well-known directory
+RUN mkdir -p /app/.well-known
+
 # Environment variables for MCP configuration
 ENV MCP_SERVER_NAME="Intercom MCP Proxy" \
     MCP_SERVER_VERSION="1.2.0" \
     MCP_ALLOWED_ORIGINS="*"
+
+# Add GLAMA discovery file
+COPY .well-known /app/.well-known
 
 # Use mcp-proxy to run the server executable with proper arguments
 # Host 0.0.0.0 makes the server accessible outside the container
