@@ -13,45 +13,13 @@ export function setupRequestHandlers(server: Server, toolHandlers: ToolHandlers)
             tools: [
                 {
                     name: "search_conversations_by_customer",
-                    description: `WHEN TO USE:
-- When you need to find conversations for a specific customer
-- When analyzing communication history with a particular customer
-- When investigating customer-specific issues or patterns
-- When retrieving all support interactions for a customer
+                    description: `Searches for conversations by customer email or ID with optional date filtering.
 
-Tool Description:
-Searches for conversations by customer email or ID with optional date filtering.
+Required: customerIdentifier (email/ID)
+Optional: startDate, endDate (DD/MM/YYYY format)
+Optional: keywords (array of terms to filter by)
 
-REQUIRED PARAMETER:
-- customerIdentifier: Customer email or ID to search for
-
-OPTIONAL DATE PARAMETERS (in DD/MM/YYYY format):
-- startDate: Optional start date to filter conversations (e.g., "15/01/2025")
-- endDate: Optional end date to filter conversations (e.g., "21/01/2025")
-
-Response format:
-{
-  "result": [
-    {
-      "ticket_id": "12345",
-      "subject": "Account Access Issue",
-      "status": "resolved",
-      "created_at": "2024-03-06T10:15:00Z",
-      "conversation": [
-        {
-          "from": "customer",
-          "text": "I can't log into my account",
-          "timestamp": "2024-03-06T10:15:00Z"
-        },
-        {
-          "from": "support_agent",
-          "text": "I've reset your password, please check your email",
-          "timestamp": "2024-03-06T10:45:00Z"
-        }
-      ]
-    }
-  ]
-}`,
+Use when looking for conversation history with a specific customer.`,
                     inputSchema: {
                         type: "object",
                         required: ["customerIdentifier"],
@@ -67,52 +35,23 @@ Response format:
                             endDate: {
                                 type: "string",
                                 description: "Optional end date in DD/MM/YYYY format (e.g., '21/01/2025')"
+                            },
+                            keywords: {
+                                type: "array",
+                                items: { type: "string" },
+                                description: "Optional keywords to filter conversations by content"
                             }
                         }
                     },
                 },
                 {
                     name: "search_tickets_by_status",
-                    description: `WHEN TO USE:
-- When you need to find tickets with a specific status (open, pending, resolved)
-- When analyzing support workload by ticket status
-- When tracking resolution rates and open issues
-- When monitoring pending tickets that need attention
+                    description: `Searches for tickets by status with optional date filtering.
 
-Tool Description:
-Searches for tickets by status (open, pending, resolved) with optional date filtering.
-This tool uses the actual Intercom tickets API, not conversations.
+Required: status (one of: open, pending, resolved)
+Optional: startDate, endDate (DD/MM/YYYY format)
 
-REQUIRED PARAMETER:
-- status: Ticket status to search for (must be one of: open, pending, resolved)
-
-OPTIONAL DATE PARAMETERS (in DD/MM/YYYY format):
-- startDate: Optional start date to filter tickets (e.g., "15/01/2025")
-- endDate: Optional end date to filter tickets (e.g., "21/01/2025")
-
-Response format:
-{
-  "result": [
-    {
-      "ticket_id": "12345",
-      "subject": "Account Access Issue",
-      "status": "open",
-      "created_at": "2024-03-06T10:15:00Z",
-      "conversation": [
-        {
-          "from": "customer",
-          "text": "I can't log into my account",
-          "timestamp": "2024-03-06T10:15:00Z"
-        },
-        {
-          "from": "support_agent",
-          "text": "I'm looking into this for you",
-          "timestamp": "2024-03-06T10:45:00Z"
-        }
-      ]
-    }
-  ]
-}`,
+Use when analyzing support workload or tracking issue resolution.`,
                     inputSchema: {
                         type: "object",
                         required: ["status"],
@@ -135,158 +74,43 @@ Response format:
                 },
                 {
                     name: "list_conversations",
-                    description: `WHEN TO USE:
-- When retrieving customer support conversations from Intercom (Note: This retrieves conversations, not tickets)
-- When analyzing conversation history between customers and support agents
-- When examining ticket statuses and resolution paths
-- When reviewing recent customer inquiries
-- When analyzing support team performance and response times
-- When needing to search through historical customer issues
+                    description: `Retrieves Intercom conversations within a specific date range.
 
-Tool Description:
-Retrieves Intercom conversations within a specific date range. Dates MUST be provided in DD/MM/YYYY format.
+Required: startDate, endDate (DD/MM/YYYY format, max 7-day range)
+Optional: keyword, exclude (for content filtering)
 
-REQUIRED DATE FORMAT:
-- You MUST always use DD/MM/YYYY format for dates (e.g., "15/01/2025" for January 15, 2025)
-- Both startDate and endDate parameters are REQUIRED
-- If a user asks for conversations without specifying exact dates, you MUST prompt them for specific dates
-- DO NOT attempt to convert date ranges automatically - ask the user for specific dates
-
-REQUIRED DATE PARAMETERS:
-- startDate: Start date in DD/MM/YYYY format (e.g., "15/01/2025")
-- endDate: End date in DD/MM/YYYY format (e.g., "21/01/2025")
-
-STRICT LIMITATIONS:
-- Date range MUST NOT exceed 7 days
-- Dates must be in DD/MM/YYYY format
-- Both startDate and endDate must be provided
-
-Optional Content Filter Parameters (use ONLY when explicitly mentioned in the request):
-- keyword: Text to filter conversations by content
-  ONLY use this when the request explicitly mentions searching for specific terms
-- exclude: Text to filter out from results
-  ONLY use this when the request explicitly mentions excluding specific terms
-
-IMPORTANT: ASK FOR SPECIFIC DATES
-When a user makes vague date requests like:
-- "Show me conversations from last week"
-- "Look at January 2025 week 3"
-- "Get support conversations from yesterday"
-
-YOU MUST respond with a prompt like:
-"To retrieve those conversations, I need specific dates in DD/MM/YYYY format. 
-What start and end dates would you like to use? For example, for last week,
-I could use 05/03/2025 to 11/03/2025."
-
-EXAMPLES:
-
-User: "Show me conversations from last week"
-You: "To retrieve conversations from last week, I need specific dates in DD/MM/YYYY format. 
-Would you like me to use 05/03/2025 to 11/03/2025 for last week?"
-
-User: "Yes, that works"
-Your request:
-{
-  "startDate": "05/03/2025",
-  "endDate": "11/03/2025"
-}
-
-User: "Look at January 2025 week 3"
-You: "To retrieve conversations from the third week of January 2025, I need specific dates 
-in DD/MM/YYYY format. Would you like me to use 15/01/2025 to 21/01/2025?"
-
-User: "Find billing issues from the first week of March"
-You: "To find billing issues from the first week of March, I need specific dates 
-in DD/MM/YYYY format. Would you like me to use 01/03/2025 to 07/03/2025? 
-Also, I'll include 'billing' as a keyword filter."
-
-Response format:
-{
-  "result": [
-    {
-      "ticket_id": "12345",
-      "subject": "Billing Issue",
-      "status": "resolved",
-      "created_at": "2024-03-06T10:15:00Z",
-      "conversation": [
-        {
-          "from": "customer",
-          "text": "Hey, I was double charged!",
-          "timestamp": "2024-03-06T10:15:00Z"
-        },
-        {
-          "from": "support_agent",
-          "text": "We've refunded the duplicate charge.",
-          "timestamp": "2024-03-06T10:45:00Z"
-        }
-      ]
-    }
-  ]
-}`,
+Always ask for specific dates when user makes vague time references.`,
                     inputSchema: {
                         type: "object",
                         required: ["startDate", "endDate"],
                         properties: {
                             startDate: {
                                 type: "string",
-                                description: "Start date in DD/MM/YYYY format (e.g., '15/01/2025' for January 15, 2025). This parameter is REQUIRED."
+                                description: "Start date in DD/MM/YYYY format (e.g., '15/01/2025'). Required."
                             },
                             endDate: {
                                 type: "string",
-                                description: "End date in DD/MM/YYYY format (e.g., '21/01/2025' for January 21, 2025). This parameter is REQUIRED."
+                                description: "End date in DD/MM/YYYY format (e.g., '21/01/2025'). Required."
                             },
                             keyword: {
                                 type: "string",
-                                description: "Optional keyword to filter conversations. Only returns conversations where the subject or body contains this keyword."
+                                description: "Optional keyword to filter conversations by content."
                             },
                             exclude: {
                                 type: "string",
-                                description: "Optional exclusion filter. Excludes conversations where the subject or body contains this text."
+                                description: "Optional exclusion filter for conversation content."
                             }
                         }
                     },
                 },
                 {
                     name: "search_tickets_by_customer",
-                    description: `WHEN TO USE:
-- When you need to find tickets for a specific customer
-- When analyzing a customer's support history
-- When investigating customer-specific issues
-- When retrieving all support tickets for a customer
+                    description: `Searches for tickets by customer email or ID with optional date filtering.
 
-Tool Description:
-Searches for tickets by customer email or ID with optional date filtering.
+Required: customerIdentifier (email/ID)
+Optional: startDate, endDate (DD/MM/YYYY format) 
 
-REQUIRED PARAMETER:
-- customerIdentifier: Customer email or ID to search for
-
-OPTIONAL DATE PARAMETERS (in DD/MM/YYYY format):
-- startDate: Optional start date to filter tickets (e.g., "15/01/2025")
-- endDate: Optional end date to filter tickets (e.g., "21/01/2025")
-
-Response format:
-{
-  "result": [
-    {
-      "ticket_id": "12345",
-      "subject": "Account Access Issue",
-      "status": "resolved",
-      "created_at": "2024-03-06T10:15:00Z",
-      "conversation": [
-        {
-          "from": "customer",
-          "text": "I can't log into my account",
-          "timestamp": "2024-03-06T10:15:00Z"
-        },
-        {
-          "from": "support_agent",
-          "text": "I've reset your password, please check your email",
-          "timestamp": "2024-03-06T10:45:00Z"
-        }
-      ]
-    }
-  ]
-}`,
+Use when analyzing a customer's support history.`,
                     inputSchema: {
                         type: "object",
                         required: ["customerIdentifier"],

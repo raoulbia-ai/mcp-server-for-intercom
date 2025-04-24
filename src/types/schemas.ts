@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { validateAndTransformDate, validateDateRange } from "../utils/validators.js";
 
 // Keep the message schema which is needed for MCP communication
 export const MessageSchema = z.object({
@@ -38,41 +39,18 @@ export const SearchTicketsByStatusSchema = z.object({
     console.error("Raw arguments received:", JSON.stringify(data));
     
     try {
-        // Convert DD/MM/YYYY to Date objects and ISO strings if provided
+        // Convert DD/MM/YYYY to ISO strings if provided
         if (data.startDate) {
-            const [day, month, year] = data.startDate.split('/').map(Number);
-            const startDateObj = new Date(year, month - 1, day); // month is 0-indexed in JS
-            
-            if (isNaN(startDateObj.getTime())) {
-                throw new Error(`Invalid startDate: ${data.startDate}`);
-            }
-            
-            // Set to beginning of the day
-            startDateObj.setHours(0, 0, 0, 0);
-            data.startDate = startDateObj.toISOString();
+            data.startDate = validateAndTransformDate(data.startDate, true);
         }
         
         if (data.endDate) {
-            const [day, month, year] = data.endDate.split('/').map(Number);
-            const endDateObj = new Date(year, month - 1, day); // month is 0-indexed in JS
-            
-            if (isNaN(endDateObj.getTime())) {
-                throw new Error(`Invalid endDate: ${data.endDate}`);
-            }
-            
-            // Set to end of the day
-            endDateObj.setHours(23, 59, 59, 999);
-            data.endDate = endDateObj.toISOString();
+            data.endDate = validateAndTransformDate(data.endDate, false);
         }
         
-        // Validate that the date range is valid if both dates are provided
+        // Validate date range if both dates are provided
         if (data.startDate && data.endDate) {
-            const startDateObj = new Date(data.startDate);
-            const endDateObj = new Date(data.endDate);
-            
-            if (endDateObj < startDateObj) {
-                throw new Error("End date cannot be before start date");
-            }
+            validateDateRange(data.startDate, data.endDate);
         }
         
     } catch (e) {
@@ -110,41 +88,18 @@ export const SearchConversationsByCustomerSchema = z.object({
     console.error("Raw arguments received:", JSON.stringify(data));
     
     try {
-        // Convert DD/MM/YYYY to Date objects and ISO strings if provided
+        // Convert DD/MM/YYYY to ISO strings if provided
         if (data.startDate) {
-            const [day, month, year] = data.startDate.split('/').map(Number);
-            const startDateObj = new Date(year, month - 1, day); // month is 0-indexed in JS
-            
-            if (isNaN(startDateObj.getTime())) {
-                throw new Error(`Invalid startDate: ${data.startDate}`);
-            }
-            
-            // Set to beginning of the day
-            startDateObj.setHours(0, 0, 0, 0);
-            data.startDate = startDateObj.toISOString();
+            data.startDate = validateAndTransformDate(data.startDate, true);
         }
         
         if (data.endDate) {
-            const [day, month, year] = data.endDate.split('/').map(Number);
-            const endDateObj = new Date(year, month - 1, day); // month is 0-indexed in JS
-            
-            if (isNaN(endDateObj.getTime())) {
-                throw new Error(`Invalid endDate: ${data.endDate}`);
-            }
-            
-            // Set to end of the day
-            endDateObj.setHours(23, 59, 59, 999);
-            data.endDate = endDateObj.toISOString();
+            data.endDate = validateAndTransformDate(data.endDate, false);
         }
         
-        // Validate that the date range is valid if both dates are provided
+        // Validate date range if both dates are provided
         if (data.startDate && data.endDate) {
-            const startDateObj = new Date(data.startDate);
-            const endDateObj = new Date(data.endDate);
-            
-            if (endDateObj < startDateObj) {
-                throw new Error("End date cannot be before start date");
-            }
+            validateDateRange(data.startDate, data.endDate);
         }
         
     } catch (e) {
@@ -179,41 +134,18 @@ export const SearchTicketsByCustomerSchema = z.object({
     console.error("Raw arguments received:", JSON.stringify(data));
     
     try {
-        // Convert DD/MM/YYYY to Date objects and ISO strings if provided
+        // Convert DD/MM/YYYY to ISO strings if provided
         if (data.startDate) {
-            const [day, month, year] = data.startDate.split('/').map(Number);
-            const startDateObj = new Date(year, month - 1, day); // month is 0-indexed in JS
-            
-            if (isNaN(startDateObj.getTime())) {
-                throw new Error(`Invalid startDate: ${data.startDate}`);
-            }
-            
-            // Set to beginning of the day
-            startDateObj.setHours(0, 0, 0, 0);
-            data.startDate = startDateObj.toISOString();
+            data.startDate = validateAndTransformDate(data.startDate, true);
         }
         
         if (data.endDate) {
-            const [day, month, year] = data.endDate.split('/').map(Number);
-            const endDateObj = new Date(year, month - 1, day); // month is 0-indexed in JS
-            
-            if (isNaN(endDateObj.getTime())) {
-                throw new Error(`Invalid endDate: ${data.endDate}`);
-            }
-            
-            // Set to end of the day
-            endDateObj.setHours(23, 59, 59, 999);
-            data.endDate = endDateObj.toISOString();
+            data.endDate = validateAndTransformDate(data.endDate, false);
         }
         
-        // Validate that the date range is valid if both dates are provided
+        // Validate date range if both dates are provided
         if (data.startDate && data.endDate) {
-            const startDateObj = new Date(data.startDate);
-            const endDateObj = new Date(data.endDate);
-            
-            if (endDateObj < startDateObj) {
-                throw new Error("End date cannot be before start date");
-            }
+            validateDateRange(data.startDate, data.endDate);
         }
         
     } catch (e) {
@@ -251,48 +183,15 @@ export const ListConversationsArgumentsSchema = z.object({
     console.error("Raw arguments received:", JSON.stringify(data));
     
     try {
-        // Convert DD/MM/YYYY to Date objects and ISO strings
-        if (data.startDate) {
-            const [day, month, year] = data.startDate.split('/').map(Number);
-            const startDateObj = new Date(year, month - 1, day); // month is 0-indexed in JS
-            
-            if (isNaN(startDateObj.getTime())) {
-                throw new Error(`Invalid startDate: ${data.startDate}`);
-            }
-            
-            // Set to beginning of the day
-            startDateObj.setHours(0, 0, 0, 0);
-            data.startDate = startDateObj.toISOString();
-        }
+        // Convert DD/MM/YYYY to ISO strings
+        data.startDate = validateAndTransformDate(data.startDate, true);
+        data.endDate = validateAndTransformDate(data.endDate, false);
         
-        if (data.endDate) {
-            const [day, month, year] = data.endDate.split('/').map(Number);
-            const endDateObj = new Date(year, month - 1, day); // month is 0-indexed in JS
-            
-            if (isNaN(endDateObj.getTime())) {
-                throw new Error(`Invalid endDate: ${data.endDate}`);
-            }
-            
-            // Set to end of the day
-            endDateObj.setHours(23, 59, 59, 999);
-            data.endDate = endDateObj.toISOString();
-        }
-        
-        // Validate that the date range is valid
-        const startDateObj = new Date(data.startDate);
-        const endDateObj = new Date(data.endDate);
-        
-        if (endDateObj < startDateObj) {
-            throw new Error("End date cannot be before start date");
-        }
+        // Validate date range
+        validateDateRange(data.startDate, data.endDate);
         
         // Enforce 7-day maximum range
-        const maxRangeMs = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
-        const actualRangeMs = endDateObj.getTime() - startDateObj.getTime();
-        
-        if (actualRangeMs > maxRangeMs) {
-            throw new Error(`Date range exceeds 7-day maximum (${Math.round(actualRangeMs / (24 * 60 * 60 * 1000))} days). Please limit to 7 days or less.`);
-        }
+        validateMaxDateRange(data.startDate, data.endDate, 7);
         
     } catch (e) {
         // Throw error to be caught by the handler

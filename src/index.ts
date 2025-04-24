@@ -23,7 +23,7 @@ async function main() {
                 capabilities: {
                     tools: {
                         search_conversations_by_customer: {
-                            description: "Search for conversations by customer email or ID with optional date filtering.",
+                            description: "Searches for conversations by customer email or ID with optional date filtering.",
                             parameters: {
                                 type: "object",
                                 required: ["customerIdentifier"],
@@ -39,12 +39,17 @@ async function main() {
                                     endDate: {
                                         type: "string",
                                         description: "Optional end date in DD/MM/YYYY format (e.g., '21/01/2025')"
+                                    },
+                                    keywords: {
+                                        type: "array",
+                                        items: { type: "string" },
+                                        description: "Optional keywords to filter conversations by content"
                                     }
                                 }
                             }
                         },
                         search_tickets_by_status: {
-                            description: "Search for tickets by status (open, pending, resolved) with optional date filtering. Uses the actual Intercom tickets API.",
+                            description: "Searches for tickets by status with optional date filtering.",
                             parameters: {
                                 type: "object",
                                 required: ["status"],
@@ -66,7 +71,7 @@ async function main() {
                             }
                         },
                         search_tickets_by_customer: {
-                            description: "Search for tickets by customer email or ID with optional date filtering. Uses the actual Intercom tickets API.",
+                            description: "Searches for tickets by customer email or ID with optional date filtering.",
                             parameters: {
                                 type: "object",
                                 required: ["customerIdentifier"],
@@ -87,26 +92,26 @@ async function main() {
                             }
                         },
                         list_conversations: {
-                            description: "Retrieves Intercom conversations within a date range using DD/MM/YYYY format dates (max 7 days). ALWAYS ask for specific dates when user makes vague time references.",
+                            description: "Retrieves Intercom conversations within a specific date range (max 7 days).",
                             parameters: {
                                 type: "object",
                                 required: ["startDate", "endDate"],
                                 properties: {
                                     startDate: {
                                         type: "string",
-                                        description: "REQUIRED. Start date in DD/MM/YYYY format (e.g., '15/01/2025'). Must explicitly ask for specific dates when user makes vague time references."
+                                        description: "Start date in DD/MM/YYYY format (e.g., '15/01/2025'). Required."
                                     },
                                     endDate: {
                                         type: "string",
-                                        description: "REQUIRED. End date in DD/MM/YYYY format (e.g., '21/01/2025'). Must be within 7 days of startDate to prevent excessive data retrieval."
+                                        description: "End date in DD/MM/YYYY format (e.g., '21/01/2025'). Required."
                                     },
                                     keyword: {
                                         type: "string",
-                                        description: "OPTIONAL. Only use when explicitly asked to search for specific terms."
+                                        description: "Optional keyword to filter conversations by content."
                                     },
                                     exclude: {
                                         type: "string",
-                                        description: "OPTIONAL. Only use when explicitly asked to exclude specific content."
+                                        description: "Optional exclusion filter for conversation content."
                                     }
                                 }
                             }
