@@ -19,8 +19,11 @@ An MCP-compliant server that enables AI assistants to access and analyze custome
 ### Prerequisites
 - Node.js 18.0.0 or higher
 - An Intercom account with API access
+- Your Intercom API token (available in your Intercom account settings)
 
 ### Quick Setup
+
+#### Using NPM
 ```bash
 # Install the package globally
 npm install -g mcp-server-for-intercom
@@ -30,6 +33,18 @@ export INTERCOM_ACCESS_TOKEN="your_token_here"
 
 # Run the server
 intercom-mcp
+```
+
+#### Using Docker
+```bash
+# Build the Docker image
+docker build -t mcp-intercom .
+
+# Run the container with your API token
+docker run --rm -it -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom
+
+# For Windows Command Prompt
+docker run --rm -it -e INTERCOM_ACCESS_TOKEN=your_token_here mcp-intercom
 ```
 
 ## Available MCP Tools
