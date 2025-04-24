@@ -8,9 +8,10 @@ An MCP-compliant server for retrieving customer support tickets from Intercom. T
 
 ## Features
 
-- Retrieve all support tickets (open and closed) with full conversation history
-- Filter tickets by creation date
-- Pagination support for handling large volumes of tickets
+- Retrieve all support tickets and conversations with full history
+- Filter by customer, status, date range, and keywords
+- Search tickets and conversations by multiple criteria
+- Automatic pagination for handling large volumes of data
 - Seamless integration with MCP-compliant AI assistants
 
 ## Disclaimer
@@ -27,6 +28,37 @@ This project is designed to comply with Intercom's developer terms of service by
 - **Transparency**: Clearly documenting data usage and application features
 
 Users of this integration should review Intercom's [Developer Terms](https://developers.intercom.com/docs/publish-to-the-app-store/intercom-developer-terms) to ensure their implementation complies with all requirements.
+
+## Implementation Notes
+
+### Intercom API Compatibility
+
+When using this service, be aware of the following Intercom API considerations:
+
+1. **Email vs ID Resolution**:
+   - The `customerIdentifier` parameter accepts either an email or an Intercom contact ID
+   - Internally, emails are resolved to contact IDs before querying the Intercom API
+   - This two-step process is required as Intercom's API does not support direct email queries
+
+2. **Date Format Handling**:
+   - While the MCP tools accept dates in DD/MM/YYYY format for user convenience
+   - Intercom's API requires UNIX timestamps for date filtering
+   - All dates are automatically converted before making API requests
+
+3. **Status Mapping**:
+   - The `pending` status in our API maps to Intercom's `snoozed` state
+   - The `resolved` status maps to Intercom's `closed` state
+
+4. **Content Filtering**:
+   - Keyword filtering uses Intercom's `source.body` with the `~` (contains) operator
+   - Exclusion filtering uses the `!~` (does not contain) operator
+   - Multiple keywords are implemented as OR conditions
+
+5. **Pagination**:
+   - For large result sets (>150 items), automatic pagination is implemented
+   - The service uses Intercom's cursor-based pagination with the `starting_after` parameter
+
+See `src/services/INTERCOM_API_NOTES.md` for detailed technical implementation notes.
 
 ## Installation
 
@@ -181,15 +213,19 @@ The inspector is particularly helpful when:
 
 ## API Reference
 
-### `list_tickets`
+## Available MCP Tools
 
-Retrieves all support tickets with their conversation history within a specific date range.
+This MCP server exposes the following tools for interacting with Intercom:
+
+### 1. `list_conversations`
+
+Retrieves all conversations within a specific date range with optional content filtering.
 
 **Request Parameters:**
-- `startDate` (DD/MM/YYYY format) – The start date for ticket retrieval (required)
-- `endDate` (DD/MM/YYYY format) – The end date for ticket retrieval (required)
-- `keyword` (string) – Optional filter to only include tickets containing this text
-- `exclude` (string) – Optional filter to exclude tickets containing this text
+- `startDate` (DD/MM/YYYY format) – The start date for conversation retrieval (required)
+- `endDate` (DD/MM/YYYY format) – The end date for conversation retrieval (required)
+- `keyword` (string) – Optional filter to only include conversations containing this text
+- `exclude` (string) – Optional filter to exclude conversations containing this text
 
 **Important Notes:**
 - Date range must not exceed 7 days
@@ -205,7 +241,63 @@ Retrieves all support tickets with their conversation history within a specific 
 }
 ```
 
-**Response Format:**
+### 2. `search_conversations_by_customer`
+
+Finds conversations for a specific customer with optional date and content filtering.
+
+**Request Parameters:**
+- `customerIdentifier` (string) – Customer email or Intercom ID (required)
+- `startDate` (DD/MM/YYYY format) – Optional start date for filtering
+- `endDate` (DD/MM/YYYY format) – Optional end date for filtering
+- `keywords` (array) – Optional array of keywords to filter conversations by content
+
+**Example Request:**
+```json
+{
+  "customerIdentifier": "customer@example.com",
+  "startDate": "15/01/2025",
+  "endDate": "21/01/2025",
+  "keywords": ["billing", "refund"]
+}
+```
+
+### 3. `search_tickets_by_status`
+
+Retrieves tickets by their status with optional date filtering.
+
+**Request Parameters:**
+- `status` (string) – Status to search for: "open", "pending", or "resolved" (required)
+- `startDate` (DD/MM/YYYY format) – Optional start date for filtering
+- `endDate` (DD/MM/YYYY format) – Optional end date for filtering
+
+**Example Request:**
+```json
+{
+  "status": "open",
+  "startDate": "15/01/2025",
+  "endDate": "21/01/2025"
+}
+```
+
+### 4. `search_tickets_by_customer`
+
+Finds tickets associated with a specific customer with optional date filtering.
+
+**Request Parameters:**
+- `customerIdentifier` (string) – Customer email or Intercom ID (required)
+- `startDate` (DD/MM/YYYY format) – Optional start date for filtering
+- `endDate` (DD/MM/YYYY format) – Optional end date for filtering
+
+**Example Request:**
+```json
+{
+  "customerIdentifier": "customer@example.com",
+  "startDate": "15/01/2025",
+  "endDate": "21/01/2025"
+}
+```
+
+**Response Format (all tools):**
 ```json
 {
   "result": [
