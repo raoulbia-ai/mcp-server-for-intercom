@@ -17,77 +17,97 @@ export class IntercomService {
     }
 
     /**
-     * Retrieves tickets with conversation history for a specific date range,
-     * with optional keyword filtering and exclusion, optimized for large volumes
+     * Makes a request to the Intercom API with retries and proper authentication
      */
-    async getTickets(startDate: string, endDate: string, keyword?: string, exclude?: string): Promise<Ticket[]> {
+    private async makeRequest<T>(
+        endpoint: string,
+        method: string = 'GET',
+        params?: Record<string, string>,
+        body?: unknown,
+        retryCount: number = 0
+    ): Promise<T> {
+        const url = new URL(`${this.API_BASE_URL}/${endpoint}`);
+        
+        // Add query parameters
+        if (params) {
+            Object.entries(params).forEach(([key, value]) => {
+                url.searchParams.append(key, value);
+            });
+        }
+        
         try {
-            const startDateObj = new Date(startDate);
-            const endDateObj = new Date(endDate);
-            let allTickets: Ticket[] = [];
-            let startingAfter: string | null = null;
-            let page = 1;
-            let morePages = true;
+            const response = await fetch(url.toString(), {
+                method,
+                headers: {
+                    'Authorization': `Bearer ${this.authToken}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: body ? JSON.stringify(body) : undefined
+            });
             
-            console.error(`Retrieving conversations between ${startDate} and ${endDate}...`);
-            if (keyword) console.error(`Filtering by keyword: "${keyword}"`);
-            if (exclude) console.error(`Excluding conversations containing: "${exclude}"`);
-            
-            while (morePages) {
-                // Set up pagination parameters
-                const params: Record<string, string> = {
-                    'per_page': this.ITEMS_PER_PAGE.toString()
-                };
-                
-                if (startingAfter) {
-                    params['starting_after'] = startingAfter;
-                }
-                
-                console.error(`Retrieving page ${page}...`);
-                
-                // Get tickets with pagination
-                const response = await this.makeRequest<{
-                    conversations: IntercomConversation[];
-                    pages: { next?: string };
-                }>('conversations', 'GET', params);
-                
-                if (!response.conversations || response.conversations.length === 0) {
-                    morePages = false;
-                    break;
-                }
-                
-                console.error(`Retrieved page ${page} with ${response.conversations.length} conversations`);
-                
-                // Process conversation data into ticket format
-                const tickets = this.convertToTickets(response.conversations, startDateObj, endDateObj, keyword, exclude);
-                allTickets = [...allTickets, ...tickets];
-                
-                // Get next page URL if it exists
-                const nextPage = response.pages?.next;
-                if (nextPage && typeof nextPage === 'string' && nextPage.includes('starting_after=')) {
-                    // Extract starting_after parameter from next URL
-                    startingAfter = nextPage.split('starting_after=')[1].split('&')[0];
-                    morePages = true;
-                    page++;
-                } else {
-                    morePages = false;
-                }
-                
-                // Add slight delay to prevent rate limiting (following Python script's pattern)
-                if (morePages) {
-                    await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 seconds as in Python script
-                }
+            // Handle rate limiting
+            if (response.status === 429 && retryCount < this.MAX_RETRIES) {
+                const retryAfter = parseInt(response.headers.get('Retry-After') || '1', 10);
+                await new Promise(resolve => setTimeout(resolve, retryAfter * 1000 || this.RETRY_DELAY));
+                return this.makeRequest(endpoint, method, params, body, retryCount + 1);
             }
             
-            console.error(`Total conversations retrieved: ${allTickets.length}`);
+            if (!response.ok) {
+                let errorMessage = `API request failed with status ${response.status}`;
+                try {
+                    const errorData = await response.json();
+                    errorMessage += `: ${errorData?.message || response.statusText}`;
+                } catch {
+                    errorMessage += `: ${response.statusText}`;
+                }
+                throw new Error(errorMessage);
+            }
             
-            // Get full conversation history for each ticket
-            const ticketsWithConversations = await this.addConversationHistories(allTickets, keyword, exclude);
-            
-            return ticketsWithConversations;
+            return await response.json() as T;
         } catch (error) {
-            console.error('Error fetching tickets:', error);
-            throw new Error(`Failed to retrieve tickets: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            if (error instanceof Error && retryCount < this.MAX_RETRIES) {
+                // Exponential backoff
+                const delay = this.RETRY_DELAY * Math.pow(2, retryCount);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                return this.makeRequest(endpoint, method, params, body, retryCount + 1);
+            }
+            throw error;
+        }
+    }
+
+    /**
+     * Determines the sender type based on author type and part type
+     */
+    private determineMessageSender(authorType: string, partType: string): "customer" | "support_agent" | "system" {
+        if (partType === 'note') {
+            return 'system';
+        }
+        
+        switch (authorType) {
+            case 'user':
+                return 'customer';
+            case 'admin':
+            case 'bot':
+                return 'support_agent';
+            default:
+                return 'system';
+        }
+    }
+
+    /**
+     * Maps Intercom conversation state to a standardized status
+     */
+    private mapIntercomStateToStatus(state: string): string {
+        switch (state) {
+            case 'open':
+                return 'open';
+            case 'closed':
+                return 'resolved';
+            case 'snoozed':
+                return 'pending';
+            default:
+                return state;
         }
     }
 
@@ -116,8 +136,16 @@ export class IntercomService {
                 const fullText = `${title} ${body}`.toLowerCase();
                 
                 // Keyword filter (if provided)
-                if (keyword && !fullText.includes(keyword.toLowerCase())) {
-                    return false;
+                if (keyword) {
+                    // Check if any of the pipe-delimited keywords match
+                    if (keyword.includes('|')) {
+                        const keywordArray = keyword.split('|');
+                        if (!keywordArray.some(k => fullText.includes(k.toLowerCase()))) {
+                            return false;
+                        }
+                    } else if (!fullText.includes(keyword.toLowerCase())) {
+                        return false;
+                    }
                 }
                 
                 // Exclusion filter (if provided)
@@ -137,18 +165,125 @@ export class IntercomService {
     }
 
     /**
-     * Maps Intercom conversation state to a standardized status
+     * Gets the full conversation history for a specific ticket
      */
-    private mapIntercomStateToStatus(state: string): string {
-        switch (state) {
-            case 'open':
-                return 'open';
-            case 'closed':
-                return 'resolved';
-            case 'snoozed':
-                return 'pending';
-            default:
-                return state;
+    private async getConversationHistory(ticketId: string, keyword?: string, exclude?: string): Promise<ConversationMessage[]> {
+        try {
+            // Add parameters for expanded view and plaintext display as in Python script
+            const params = {
+                'view': 'expanded',
+                'display_as': 'plaintext'
+            };
+            
+            const response = await this.makeRequest<{
+                conversation_parts: {
+                    conversation_parts: Array<{
+                        part_type: string;
+                        body?: string;
+                        author: { type: string };
+                        created_at: number;
+                    }>;
+                    total_count: number;
+                };
+                source: { body?: string; delivered_as?: string };
+                created_at: number;
+            }>(`conversations/${ticketId}`, 'GET', params);
+            
+            const messages: ConversationMessage[] = [];
+            
+            // Add the initial message
+            if (response.source?.body) {
+                const body = response.source.body;
+                
+                // Apply keyword filter if specified
+                let keywordMatch = true;
+                if (keyword) {
+                    // Check if any of the pipe-delimited keywords match
+                    if (keyword.includes('|')) {
+                        const keywordArray = keyword.split('|');
+                        keywordMatch = keywordArray.some(k => body.toLowerCase().includes(k.toLowerCase()));
+                    } else {
+                        keywordMatch = body.toLowerCase().includes(keyword.toLowerCase());
+                    }
+                }
+                
+                if (keyword && !keywordMatch) {
+                    // Skip this message if keyword filter is active and not matched
+                } else if (exclude && body.toLowerCase().includes(exclude.toLowerCase())) {
+                    // Skip this message if exclusion filter is active and matched
+                } else {
+                    messages.push({
+                        from: 'customer',
+                        text: body,
+                        timestamp: new Date(response.created_at * 1000).toISOString()
+                    });
+                }
+            }
+            
+            // Add conversation parts
+            const conversationParts = response.conversation_parts.conversation_parts;
+            conversationParts.forEach(part => {
+                if (part.body) {
+                    const body = part.body;
+                    
+                    // Apply keyword filter if specified
+                    let keywordMatch = true;
+                    if (keyword) {
+                        // Check if any of the pipe-delimited keywords match
+                        if (keyword.includes('|')) {
+                            const keywordArray = keyword.split('|');
+                            keywordMatch = keywordArray.some(k => body.toLowerCase().includes(k.toLowerCase()));
+                        } else {
+                            keywordMatch = body.toLowerCase().includes(keyword.toLowerCase());
+                        }
+                    }
+                    
+                    if (keyword && !keywordMatch) {
+                        // Skip this message if keyword filter is active and not matched
+                        return;
+                    }
+                    
+                    // Apply exclusion filter if specified
+                    if (exclude && body.toLowerCase().includes(exclude.toLowerCase())) {
+                        // Skip this message if exclusion filter is active and matched
+                        return;
+                    }
+                    
+                    messages.push({
+                        from: this.determineMessageSender(part.author.type, part.part_type),
+                        text: body,
+                        timestamp: new Date(part.created_at * 1000).toISOString()
+                    });
+                }
+            });
+            
+            // Check if we're hitting the 500 conversation parts limit (as mentioned in Python script)
+            const totalCount = response.conversation_parts.total_count;
+            if (totalCount === 500) {
+                console.error(`WARNING: Conversation ${ticketId} has reached the 500 parts limit. Some older messages may be missing.`);
+            }
+            
+            return messages;
+        } catch (error) {
+            console.error(`Error fetching conversation history for ticket ${ticketId}:`, error);
+            
+            // Try alternate URL format as in Python script
+            if (error instanceof Error && error.message.includes('404')) {
+                console.error(`Conversation ${ticketId} not found (404). Trying alternate URL format...`);
+                try {
+                    const alternateResponse = await this.makeRequest<{
+                        id: string;
+                    }>(`admins/conversations/${ticketId}`, 'GET');
+                    
+                    if (alternateResponse && alternateResponse.id) {
+                        return this.getConversationHistory(alternateResponse.id, keyword, exclude);
+                    }
+                } catch (alternateError) {
+                    console.error(`Alternate URL also failed for ticket ${ticketId}:`, alternateError);
+                }
+            }
+            
+            return []; // Return empty conversation rather than failing completely
         }
     }
 
@@ -286,7 +421,7 @@ export class IntercomService {
                 
                 console.error(`Retrieving page ${page}...`);
                 
-                // Get tickets with pagination
+                // Get conversations with pagination
                 const response = await this.makeRequest<{
                     conversations: IntercomConversation[];
                     pages: { next?: string };
@@ -336,182 +471,498 @@ export class IntercomService {
     }
 
     /**
-     * Gets the full conversation history for a specific ticket
+     * Searches for tickets by status (open, pending, resolved)
+     * with optional date range filtering
+     * Uses the actual /tickets/search endpoint
      */
-    private async getConversationHistory(ticketId: string, keyword?: string, exclude?: string): Promise<ConversationMessage[]> {
+    async getTicketsByStatus(
+        status: string,
+        startDate?: string,
+        endDate?: string
+    ): Promise<Ticket[]> {
         try {
-            // Add parameters for expanded view and plaintext display as in Python script
-            const params = {
-                'view': 'expanded',
-                'display_as': 'plaintext'
+            console.error(`Searching for tickets with status: ${status}`);
+            if (startDate) console.error(`Start date: ${startDate}`);
+            if (endDate) console.error(`End date: ${endDate}`);
+            
+            // Map our status terms to Intercom's state values
+            const stateMap: Record<string, string> = {
+                'open': 'open',
+                'pending': 'snoozed',
+                'resolved': 'closed'
             };
             
+            const intercomState = stateMap[status.toLowerCase()] || status;
+            console.error(`Mapped status "${status}" to Intercom state "${intercomState}"`);
+            
+            // Build the search query for the tickets/search endpoint
+            const searchQuery: any = {
+                query: {
+                    operator: "AND",
+                    value: [
+                        {
+                            field: "state",
+                            operator: "=",
+                            value: intercomState
+                        }
+                    ]
+                }
+            };
+            
+            // Add date filters if provided
+            if (startDate) {
+                const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
+                searchQuery.query.value.push({
+                    field: "created_at",
+                    operator: ">=",
+                    value: startTimestamp
+                });
+            }
+            
+            if (endDate) {
+                const endTimestamp = Math.floor(new Date(endDate).getTime() / 1000);
+                searchQuery.query.value.push({
+                    field: "created_at",
+                    operator: "<=",
+                    value: endTimestamp
+                });
+            }
+            
+            console.error(`Executing ticket search with query:`, JSON.stringify(searchQuery, null, 2));
+            
+            // Make the API request to the tickets/search endpoint
             const response = await this.makeRequest<{
-                conversation_parts: {
-                    conversation_parts: Array<{
-                        part_type: string;
-                        body?: string;
-                        author: { type: string };
+                tickets: Array<{
+                    id: string;
+                    title: string;
+                    state: string;
+                    created_at: number;
+                    updated_at: number;
+                    priority: string;
+                    tags?: { tags: Array<{ id: string; name: string }> };
+                }>;
+                total_count: number;
+            }>('tickets/search', 'POST', undefined, searchQuery);
+            
+            if (!response.tickets || response.tickets.length === 0) {
+                console.error(`No tickets found with status: ${status}`);
+                return [];
+            }
+            
+            console.error(`Found ${response.tickets.length} tickets with status: ${status}`);
+            
+            // Convert the Intercom ticket format to our standard format
+            const tickets: Ticket[] = response.tickets.map(ticket => ({
+                ticket_id: ticket.id,
+                subject: ticket.title || 'No subject',
+                status: this.mapIntercomStateToStatus(ticket.state),
+                created_at: new Date(ticket.created_at * 1000).toISOString(),
+                conversation: [] // Will be populated later
+            }));
+            
+            // Get full conversation history for each ticket
+            const ticketsWithConversations = await this.addConversationHistories(tickets);
+            
+            return ticketsWithConversations;
+        } catch (error) {
+            console.error('Error searching tickets by status:', error);
+            throw new Error(`Failed to search tickets: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * Searches for conversations by customer email or ID
+     * with optional date range filtering
+     */
+    async getConversationsByCustomer(
+        customerIdentifier: string,
+        startDate?: string,
+        endDate?: string,
+        keywords?: string[]
+    ): Promise<Ticket[]> {
+        try {
+            console.error(`Searching for conversations with customer: ${customerIdentifier}`);
+            if (startDate) console.error(`Start date: ${startDate}`);
+            if (endDate) console.error(`End date: ${endDate}`);
+            if (keywords && keywords.length > 0) console.error(`Filtering by keywords: ${keywords.join(', ')}`);
+            
+            // Determine if customerIdentifier is an email or ID
+            const isEmail = customerIdentifier.includes('@');
+            console.error(`Identified as ${isEmail ? 'email' : 'ID'}`);
+            
+            // First, we need to find the contact by email or ID
+            let contactId: string | undefined;
+            
+            try {
+                // Search for the contact
+                const searchParams: Record<string, string> = {};
+                
+                if (isEmail) {
+                    console.error(`Searching for contact with email: ${customerIdentifier}`);
+                    // According to the Intercom API documentation, we should use the contacts/search endpoint
+                    // with a query body to search for contacts by email
+                    const searchBody = {
+                        query: {
+                            field: 'email',
+                            operator: '=',
+                            value: customerIdentifier
+                        }
+                    };
+                    
+                    console.error(`Searching for contact with email using contacts/search endpoint`);
+                    const searchResponse = await this.makeRequest<{
+                        data: Array<{
+                            id: string;
+                            type: string;
+                            email?: string;
+                        }>;
+                    }>('contacts/search', 'POST', undefined, searchBody);
+                    
+                    if (searchResponse.data && searchResponse.data.length > 0) {
+                        contactId = searchResponse.data[0].id;
+                        console.error(`Found contact with ID: ${contactId} using search endpoint`);
+                    }
+                } else {
+                    console.error(`Searching for contact with ID: ${customerIdentifier}`);
+                    // If it's not an email, try it as an ID directly
+                    contactId = customerIdentifier;
+                }
+                
+                if (!contactId) {
+                    // Only perform the search if we don't already have the ID
+                    const searchResponse = await this.makeRequest<{
+                        data: Array<{
+                            id: string;
+                            type: string;
+                            email?: string;
+                        }>;
+                    }>('contacts/search', 'POST', undefined, { query: searchParams });
+                    
+                    if (!searchResponse.data || searchResponse.data.length === 0) {
+                        console.error(`No contact found for ${customerIdentifier}`);
+                        return []; // No contact found
+                    }
+                    
+                    contactId = searchResponse.data[0].id;
+                    console.error(`Found contact with ID: ${contactId}`);
+                }
+                
+                // Now get conversations for this contact
+                console.error(`Retrieving conversations for contact ID: ${contactId}`);
+                const response = await this.makeRequest<{
+                    conversations: IntercomConversation[];
+                }>(`contacts/${contactId}/conversations`, 'GET');
+                
+                if (!response.conversations || response.conversations.length === 0) {
+                    console.error(`No conversations found for contact ID: ${contactId}`);
+                    return []; // No conversations found
+                }
+                
+                console.error(`Found ${response.conversations.length} conversations for contact`);
+                
+                // Convert to our ticket format and filter by date if needed
+                const startDateObj = startDate ? new Date(startDate) : new Date(0); // Default to epoch start
+                const endDateObj = endDate ? new Date(endDate) : new Date(); // Default to now
+                
+                const tickets = this.convertToTickets(
+                    response.conversations,
+                    startDateObj,
+                    endDateObj
+                );
+                
+                console.error(`After date filtering, ${tickets.length} conversations remain`);
+                
+                // Process keywords array if provided
+                let keywordFilter: string | undefined;
+                if (keywords && keywords.length > 0) {
+                    // Join keywords with pipe for OR-based filtering
+                    keywordFilter = keywords.join('|');
+                    console.error(`Using keyword filter: ${keywordFilter}`);
+                }
+                
+                // Get full conversation history for each ticket
+                const ticketsWithConversations = await this.addConversationHistories(tickets, keywordFilter);
+                
+                return ticketsWithConversations;
+            } catch (error) {
+                console.error(`Error finding contact: ${error}`);
+                
+                // If we can't find the contact by search, try a different approach
+                // Get all conversations and filter by customer info
+                console.error('Falling back to retrieving all conversations and filtering');
+                
+                const allConversations = await this.getAllConversationsWithPagination();
+                
+                // Filter conversations by customer identifier
+                const filteredConversations = allConversations.filter(conversation => {
+                    // Check if any contact in the conversation matches
+                    if (conversation.contacts && conversation.contacts.contacts) {
+                        return conversation.contacts.contacts.some(contact => {
+                            if (isEmail && contact.email) {
+                                return contact.email.toLowerCase() === customerIdentifier.toLowerCase();
+                            } else {
+                                return contact.id === customerIdentifier;
+                            }
+                        });
+                    }
+                    return false;
+                });
+                
+                console.error(`Found ${filteredConversations.length} conversations after filtering`);
+                
+                // Convert to our ticket format and filter by date if needed
+                const startDateObj = startDate ? new Date(startDate) : new Date(0); // Default to epoch start
+                const endDateObj = endDate ? new Date(endDate) : new Date(); // Default to now
+                
+                const tickets = this.convertToTickets(
+                    filteredConversations,
+                    startDateObj,
+                    endDateObj
+                );
+                
+                console.error(`After date filtering, ${tickets.length} conversations remain`);
+                
+                // Process keywords array if provided
+                let keywordFilter: string | undefined;
+                if (keywords && keywords.length > 0) {
+                    // Join keywords with pipe for OR-based filtering
+                    keywordFilter = keywords.join('|');
+                    console.error(`Using keyword filter: ${keywordFilter}`);
+                }
+                
+                // Get full conversation history for each ticket
+                const ticketsWithConversations = await this.addConversationHistories(tickets, keywordFilter);
+                
+                return ticketsWithConversations;
+            }
+        } catch (error) {
+            console.error('Error searching conversations by customer:', error);
+            throw new Error(`Failed to search conversations: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * Searches for tickets by customer email or ID
+     * with optional date range filtering
+     * Uses a similar approach to getConversations which is known to work
+     */
+    async getTicketsByCustomer(
+        customerIdentifier: string,
+        startDate?: string,
+        endDate?: string
+    ): Promise<Ticket[]> {
+        try {
+            console.error(`Searching for tickets with customer: ${customerIdentifier}`);
+            if (startDate) console.error(`Start date: ${startDate}`);
+            if (endDate) console.error(`End date: ${endDate}`);
+            
+            // Determine if customerIdentifier is an email or ID
+            const isEmail = customerIdentifier.includes('@');
+            console.error(`Identified as ${isEmail ? 'email' : 'ID'}`);
+            
+            // First, we need to find the contact by email or ID
+            let contactId: string | undefined;
+            
+            try {
+                // Search for the contact
+                if (isEmail) {
+                    console.error(`Searching for contact with email: ${customerIdentifier}`);
+                    // According to the Intercom API documentation, we should use the contacts/search endpoint
+                    // with a query body to search for contacts by email
+                    const searchBody = {
+                        query: {
+                            field: 'email',
+                            operator: '=',
+                            value: customerIdentifier
+                        }
+                    };
+                    
+                    console.error(`Searching for contact with email using contacts/search endpoint`);
+                    const searchResponse = await this.makeRequest<{
+                        data: Array<{
+                            id: string;
+                            type: string;
+                            email?: string;
+                        }>;
+                    }>('contacts/search', 'POST', undefined, searchBody);
+                    
+                    if (searchResponse.data && searchResponse.data.length > 0) {
+                        contactId = searchResponse.data[0].id;
+                        console.error(`Found contact with ID: ${contactId} using search endpoint`);
+                    }
+                } else {
+                    console.error(`Searching for contact with ID: ${customerIdentifier}`);
+                    // If it's not an email, try it as an ID directly
+                    contactId = customerIdentifier;
+                }
+                
+                if (!contactId) {
+                    console.error(`No contact found for ${customerIdentifier}`);
+                    return []; // No contact found
+                }
+                
+                // Now get tickets for this contact
+                console.error(`Retrieving tickets for contact ID: ${contactId}`);
+                
+                // Build the search query for the tickets/search endpoint
+                const searchQuery: any = {
+                    query: {
+                        operator: "AND",
+                        value: [
+                            {
+                                field: "contact_ids",
+                                operator: "=",
+                                value: contactId
+                            }
+                        ]
+                    }
+                };
+                
+                // Add date filters if provided
+                if (startDate) {
+                    // Convert DD/MM/YYYY to MM/DD/YYYY for proper parsing
+                    const [day, month, year] = startDate.split('/');
+                    const formattedStartDate = `${month}/${day}/${year}`;
+                    const startTimestamp = Math.floor(new Date(formattedStartDate).getTime() / 1000);
+                    searchQuery.query.value.push({
+                        field: "created_at",
+                        operator: ">=",
+                        value: startTimestamp
+                    });
+                }
+                
+                if (endDate) {
+                    // Convert DD/MM/YYYY to MM/DD/YYYY for proper parsing
+                    const [day, month, year] = endDate.split('/');
+                    const formattedEndDate = `${month}/${day}/${year}`;
+                    const endTimestamp = Math.floor(new Date(formattedEndDate).getTime() / 1000);
+                    searchQuery.query.value.push({
+                        field: "created_at",
+                        operator: "<=",
+                        value: endTimestamp
+                    });
+                }
+                
+                console.error(`Executing ticket search with query:`, JSON.stringify(searchQuery, null, 2));
+                
+                // Make the API request to the tickets/search endpoint
+                const response = await this.makeRequest<{
+                    tickets: Array<{
+                        id: string;
+                        title: string;
+                        state: string;
                         created_at: number;
+                        updated_at: number;
+                        priority: string;
+                        tags?: { tags: Array<{ id: string; name: string }> };
                     }>;
                     total_count: number;
-                };
-                source: { body?: string; delivered_as?: string };
-                created_at: number;
-            }>(`conversations/${ticketId}`, 'GET', params);
-            
-            const messages: ConversationMessage[] = [];
-            
-            // Add the initial message
-            if (response.source?.body) {
-                const body = response.source.body;
+                }>('tickets/search', 'POST', undefined, searchQuery);
                 
-                // Apply keyword filter if specified
-                if (keyword && !body.toLowerCase().includes(keyword.toLowerCase())) {
-                    // Skip this message if keyword filter is active and not matched
-                } else if (exclude && body.toLowerCase().includes(exclude.toLowerCase())) {
-                    // Skip this message if exclusion filter is active and matched
-                } else {
-                    messages.push({
-                        from: 'customer',
-                        text: body,
-                        timestamp: new Date(response.created_at * 1000).toISOString()
-                    });
+                if (!response.tickets || response.tickets.length === 0) {
+                    console.error(`No tickets found for customer: ${customerIdentifier}`);
+                    return [];
                 }
+                console.error(`Found ${response.tickets.length} tickets for customer: ${customerIdentifier}`);
+                
+                // Convert the Intercom ticket format to our standard format
+                const tickets: Ticket[] = response.tickets.map(ticket => ({
+                    ticket_id: ticket.id,
+                    subject: ticket.title || 'No subject',
+                    status: this.mapIntercomStateToStatus(ticket.state),
+                    created_at: new Date(ticket.created_at * 1000).toISOString(),
+                    conversation: [] // Will be populated later
+                }));
+                
+                // Get full conversation history for each ticket
+                const ticketsWithConversations = await this.addConversationHistories(tickets);
+                
+                return ticketsWithConversations;
+            } catch (error: any) {
+                console.error(`Error finding tickets for customer: ${error}`);
+                return []; // Return empty array on error
             }
-            
-            // Add conversation parts
-            const conversationParts = response.conversation_parts.conversation_parts;
-            conversationParts.forEach(part => {
-                if (part.body) {
-                    const body = part.body;
-                    
-                    // Apply keyword filter if specified
-                    if (keyword && !body.toLowerCase().includes(keyword.toLowerCase())) {
-                        // Skip this message if keyword filter is active and not matched
-                        return;
-                    } 
-                    
-                    // Apply exclusion filter if specified
-                    if (exclude && body.toLowerCase().includes(exclude.toLowerCase())) {
-                        // Skip this message if exclusion filter is active and matched
-                        return;
-                    }
-                    
-                    messages.push({
-                        from: this.determineMessageSender(part.author.type, part.part_type),
-                        text: body,
-                        timestamp: new Date(part.created_at * 1000).toISOString()
-                    });
-                }
-            });
-            
-            // Check if we're hitting the 500 conversation parts limit (as mentioned in Python script)
-            const totalCount = response.conversation_parts.total_count;
-            if (totalCount === 500) {
-                console.error(`WARNING: Conversation ${ticketId} has reached the 500 parts limit. Some older messages may be missing.`);
-            }
-            
-            return messages;
         } catch (error) {
-            console.error(`Error fetching conversation history for ticket ${ticketId}:`, error);
-            
-            // Try alternate URL format as in Python script
-            if (error instanceof Error && error.message.includes('404')) {
-                console.error(`Conversation ${ticketId} not found (404). Trying alternate URL format...`);
-                try {
-                    const alternateResponse = await this.makeRequest<{
-                        id: string;
-                    }>(`admins/conversations/${ticketId}`, 'GET');
-                    
-                    if (alternateResponse && alternateResponse.id) {
-                        return this.getConversationHistory(alternateResponse.id, keyword, exclude);
-                    }
-                } catch (alternateError) {
-                    console.error(`Alternate URL also failed for ticket ${ticketId}:`, alternateError);
-                }
-            }
-            
-            return []; // Return empty conversation rather than failing completely
+            console.error('Error searching tickets by customer:', error);
+            throw new Error(`Failed to search tickets: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
 
     /**
-     * Determines if a message is from customer, support agent or system
+     * Retrieves conversations for a specific date range,
+     * with optional keyword filtering and exclusion, optimized for large volumes
      */
-    private determineMessageSender(authorType: string, partType: string): "customer" | "support_agent" | "system" {
-        if (partType === 'note') {
-            return 'system';
-        }
-        
-        switch (authorType) {
-            case 'user':
-                return 'customer';
-            case 'admin':
-            case 'bot':
-                return 'support_agent';
-            default:
-                return 'system';
-        }
-    }
-
-    /**
-     * Makes a request to the Intercom API with retries and proper authentication
-     */
-    private async makeRequest<T>(
-        endpoint: string,
-        method: string = 'GET',
-        params?: Record<string, string>,
-        body?: unknown,
-        retryCount: number = 0
-    ): Promise<T> {
-        const url = new URL(`${this.API_BASE_URL}/${endpoint}`);
-        
-        // Add query parameters
-        if (params) {
-            Object.entries(params).forEach(([key, value]) => {
-                url.searchParams.append(key, value);
-            });
-        }
-        
+    async getConversations(startDate: string, endDate: string, keyword?: string, exclude?: string): Promise<Ticket[]> {
         try {
-            const response = await fetch(url.toString(), {
-                method,
-                headers: {
-                    'Authorization': `Bearer ${this.authToken}`,
-                    'Accept': 'application/json',
-                    'Content-Type': 'application/json'
-                },
-                body: body ? JSON.stringify(body) : undefined
-            });
+            const startDateObj = new Date(startDate);
+            const endDateObj = new Date(endDate);
+            let allConversations: Ticket[] = [];
+            let startingAfter: string | null = null;
+            let page = 1;
+            let morePages = true;
             
-            // Handle rate limiting
-            if (response.status === 429 && retryCount < this.MAX_RETRIES) {
-                const retryAfter = parseInt(response.headers.get('Retry-After') || '1', 10);
-                await new Promise(resolve => setTimeout(resolve, retryAfter * 1000 || this.RETRY_DELAY));
-                return this.makeRequest(endpoint, method, params, body, retryCount + 1);
-            }
+            console.error(`Retrieving conversations between ${startDate} and ${endDate}...`);
+            if (keyword) console.error(`Filtering by keyword: "${keyword}"`);
+            if (exclude) console.error(`Excluding conversations containing: "${exclude}"`);
             
-            if (!response.ok) {
-                let errorMessage = `API request failed with status ${response.status}`;
-                try {
-                    const errorData = await response.json();
-                    errorMessage += `: ${errorData?.message || response.statusText}`;
-                } catch {
-                    errorMessage += `: ${response.statusText}`;
+            while (morePages) {
+                // Set up pagination parameters
+                const params: Record<string, string> = {
+                    'per_page': this.ITEMS_PER_PAGE.toString()
+                };
+                
+                if (startingAfter) {
+                    params['starting_after'] = startingAfter;
                 }
-                throw new Error(errorMessage);
+                
+                console.error(`Retrieving page ${page}...`);
+                
+                // Get conversations with pagination
+                const response = await this.makeRequest<{
+                    conversations: IntercomConversation[];
+                    pages: { next?: string };
+                }>('conversations', 'GET', params);
+                
+                if (!response.conversations || response.conversations.length === 0) {
+                    morePages = false;
+                    break;
+                }
+                
+                console.error(`Retrieved page ${page} with ${response.conversations.length} conversations`);
+                
+                // Process conversation data into ticket format
+                const tickets = this.convertToTickets(response.conversations, startDateObj, endDateObj, keyword, exclude);
+                allConversations = [...allConversations, ...tickets];
+                
+                // Get next page URL if it exists
+                const nextPage = response.pages?.next;
+                if (nextPage && typeof nextPage === 'string' && nextPage.includes('starting_after=')) {
+                    // Extract starting_after parameter from next URL
+                    startingAfter = nextPage.split('starting_after=')[1].split('&')[0];
+                    morePages = true;
+                    page++;
+                } else {
+                    morePages = false;
+                }
+                
+                // Add slight delay to prevent rate limiting (following Python script's pattern)
+                if (morePages) {
+                    await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 seconds as in Python script
+                }
             }
             
-            return await response.json() as T;
+            console.error(`Total conversations retrieved: ${allConversations.length}`);
+            
+            // Get full conversation history for each ticket
+            const ticketsWithConversations = await this.addConversationHistories(allConversations, keyword, exclude);
+            
+            return ticketsWithConversations;
         } catch (error) {
-            if (error instanceof Error && retryCount < this.MAX_RETRIES) {
-                // Exponential backoff
-                const delay = this.RETRY_DELAY * Math.pow(2, retryCount);
-                await new Promise(resolve => setTimeout(resolve, delay));
-                return this.makeRequest(endpoint, method, params, body, retryCount + 1);
-            }
-            throw error;
+            console.error('Error fetching conversations:', error);
+            throw new Error(`Failed to retrieve conversations: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
+
 }
+
+

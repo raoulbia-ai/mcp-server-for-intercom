@@ -22,8 +22,72 @@ async function main() {
             {
                 capabilities: {
                     tools: {
-                        list_tickets: {
-                            description: "Retrieves Intercom support tickets using DD/MM/YYYY format dates (max 7 days). ALWAYS ask for specific dates when user makes vague time references.",
+                        search_conversations_by_customer: {
+                            description: "Search for conversations by customer email or ID with optional date filtering.",
+                            parameters: {
+                                type: "object",
+                                required: ["customerIdentifier"],
+                                properties: {
+                                    customerIdentifier: {
+                                        type: "string",
+                                        description: "Customer email or ID to search for"
+                                    },
+                                    startDate: {
+                                        type: "string",
+                                        description: "Optional start date in DD/MM/YYYY format (e.g., '15/01/2025')"
+                                    },
+                                    endDate: {
+                                        type: "string",
+                                        description: "Optional end date in DD/MM/YYYY format (e.g., '21/01/2025')"
+                                    }
+                                }
+                            }
+                        },
+                        search_tickets_by_status: {
+                            description: "Search for tickets by status (open, pending, resolved) with optional date filtering. Uses the actual Intercom tickets API.",
+                            parameters: {
+                                type: "object",
+                                required: ["status"],
+                                properties: {
+                                    status: {
+                                        type: "string",
+                                        description: "Ticket status to search for (open, pending, or resolved)",
+                                        enum: ["open", "pending", "resolved"]
+                                    },
+                                    startDate: {
+                                        type: "string",
+                                        description: "Optional start date in DD/MM/YYYY format (e.g., '15/01/2025')"
+                                    },
+                                    endDate: {
+                                        type: "string",
+                                        description: "Optional end date in DD/MM/YYYY format (e.g., '21/01/2025')"
+                                    }
+                                }
+                            }
+                        },
+                        search_tickets_by_customer: {
+                            description: "Search for tickets by customer email or ID with optional date filtering. Uses the actual Intercom tickets API.",
+                            parameters: {
+                                type: "object",
+                                required: ["customerIdentifier"],
+                                properties: {
+                                    customerIdentifier: {
+                                        type: "string",
+                                        description: "Customer email or ID to search for"
+                                    },
+                                    startDate: {
+                                        type: "string",
+                                        description: "Optional start date in DD/MM/YYYY format (e.g., '15/01/2025')"
+                                    },
+                                    endDate: {
+                                        type: "string",
+                                        description: "Optional end date in DD/MM/YYYY format (e.g., '21/01/2025')"
+                                    }
+                                }
+                            }
+                        },
+                        list_conversations: {
+                            description: "Retrieves Intercom conversations within a date range using DD/MM/YYYY format dates (max 7 days). ALWAYS ask for specific dates when user makes vague time references.",
                             parameters: {
                                 type: "object",
                                 required: ["startDate", "endDate"],
@@ -87,7 +151,10 @@ async function main() {
             
             console.error('✅ Intercom MCP Server started successfully and ready to process requests.');
             console.error('The server provides the following MCP tools:');
-            console.error('- list_tickets: Retrieves support tickets for a specific date range (DD/MM/YYYY format) with filtering options');
+            console.error('- search_conversations_by_customer: Search for conversations by customer email or ID with optional date filtering');
+            console.error('- search_tickets_by_status: Search for tickets by status (open, pending, resolved) with optional date filtering');
+            console.error('- search_tickets_by_customer: Search for tickets by customer email or ID with optional date filtering');
+            console.error('- list_conversations: Retrieves conversations for a specific date range (DD/MM/YYYY format) with filtering options');
         } catch (error: unknown) {
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             console.error('❌ Server failed to start:', errorMessage);
