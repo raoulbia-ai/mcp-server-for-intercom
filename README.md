@@ -37,38 +37,38 @@ intercom-mcp
 
 #### Using Docker
 
-##### Standard Version
+The default Docker configuration is optimized for Glama compatibility:
+
 ```bash
 # Start Docker (if not already running)
 # On Windows: Start Docker Desktop application
 # On Linux: sudo systemctl start docker
 
-# Build the standard image
+# Build the image
 docker build -t mcp-intercom .
 
-# Run the container with your API token
-docker run --rm -it -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom:latest
+# Run the container with your API token and port mapping
+docker run --rm -it -p 8080:8080 -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom:latest
 ```
-
-##### Glama-Compatible Version
-```bash
-# Build the Glama-compatible image
-docker build -t mcp-intercom-glama -f Dockerfile.glama .
-
-# Run the Glama-compatible container with port mapping
-docker run --rm -it -p 8080:8080 -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom-glama:latest
-```
-
-The Glama version includes specific dependencies and configurations required for integration with the Glama platform. Use this version if you plan to use the server with Glama services.
 
 **Validation Steps:**
 ```bash
 # Test the SSE endpoint
 curl -v http://localhost:8080/sse
-
-# Verify MCP discovery
-curl http://localhost:8080/.well-known/mcp.json
 ```
+
+##### Alternative Standard Version
+If you prefer a lighter version without Glama-specific dependencies:
+
+```bash
+# Build the standard image
+docker build -t mcp-intercom-standard -f Dockerfile.standard .
+
+# Run the standard container
+docker run --rm -it -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom-standard:latest
+```
+
+The default version includes specific dependencies and configurations required for integration with the Glama platform, while the standard version is more lightweight.
 
 ## Available MCP Tools
 
