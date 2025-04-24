@@ -2,13 +2,28 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Copy all files
-COPY . .
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    make \
+    g++ \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install dependencies and build
-RUN npm ci --omit=dev && \
-    npm run build && \
-    npm prune --production
+# Copy package files
+COPY package*.json ./
+COPY tsconfig.json ./
+
+# Install all dependencies
+RUN npm install
+
+# Copy source code
+COPY src/ ./src/
+
+# Build the application
+RUN npm run build
+
+# Only keep production dependencies
+RUN npm prune --production
 
 # Run the server
 CMD ["node", "build/index.js"]
