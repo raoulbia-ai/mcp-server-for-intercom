@@ -1,0 +1,19 @@
+{
+  "service_type": "customer-support",
+  "api_version": "2.3.0",
+  "endpoints": {
+    "sse": "/sse",
+    "healthcheck": "/health"
+  },
+  "capabilities": [
+    "conversation-search",
+    "ticket-management",
+    "customer-lookup"
+  ],
+  "tools": [
+    "list_conversations",
+    "search_conversations_by_customer",
+    "search_tickets_by_status",
+    "search_tickets_by_customer"
+  ]
+}
