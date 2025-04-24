@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { validateAndTransformDate, validateDateRange } from "../utils/validators.js";
+import { validateAndTransformDate, validateDateRange, validateMaxDateRange } from "../utils/validators.js";
 
 // Keep the message schema which is needed for MCP communication
 export const MessageSchema = z.object({
