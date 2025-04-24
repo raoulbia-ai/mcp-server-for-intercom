@@ -36,17 +36,30 @@ intercom-mcp
 ```
 
 #### Using Docker
+
+##### Standard Version
 ```bash
 # Start Docker (if not already running)
 # On Windows: Start Docker Desktop application
 # On Linux: sudo systemctl start docker
 
-# Build the Docker image
+# Build the standard image
 docker build -t mcp-intercom .
 
 # Run the container with your API token
 docker run --rm -it -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom:latest
 ```
+
+##### Glama-Compatible Version
+```bash
+# Build the Glama-compatible image
+docker build -t mcp-intercom-glama -f Dockerfile.glama .
+
+# Run the Glama-compatible container
+docker run --rm -it -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom-glama:latest
+```
+
+The Glama version includes specific dependencies and configurations required for integration with the Glama platform. Use this version if you plan to use the server with Glama services.
 
 ## Available MCP Tools
 
