@@ -55,11 +55,20 @@ docker run --rm -it -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom:late
 # Build the Glama-compatible image
 docker build -t mcp-intercom-glama -f Dockerfile.glama .
 
-# Run the Glama-compatible container
-docker run --rm -it -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom-glama:latest
+# Run the Glama-compatible container with port mapping
+docker run --rm -it -p 8080:8080 -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom-glama:latest
 ```
 
 The Glama version includes specific dependencies and configurations required for integration with the Glama platform. Use this version if you plan to use the server with Glama services.
+
+**Validation Steps:**
+```bash
+# Test the SSE endpoint
+curl -v http://localhost:8080/sse
+
+# Verify MCP discovery
+curl http://localhost:8080/.well-known/mcp.json
+```
 
 ## Available MCP Tools
 
