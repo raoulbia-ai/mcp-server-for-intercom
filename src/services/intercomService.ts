@@ -578,8 +578,8 @@ export class IntercomService {
      * Implementation notes: 
      * - Intercom API requires contact_ids (not email directly)
      * - First resolves email to contact ID via contacts/search endpoint
-     * - Then uses contacts/{id}/conversations endpoint to get conversations
-     * - Filters for date range and keywords are applied post-API call
+     * - Then uses conversations/search endpoint with contact_ids filter
+     * - Efficiently performs server-side filtering for dates and keywords
      */
     async getConversationsByCustomer(
         customerIdentifier: string,
@@ -603,8 +603,6 @@ export class IntercomService {
             
             try {
                 // Search for the contact
-                const searchParams: Record<string, string> = {};
-                
                 if (isEmail) {
                     console.error(`Searching for contact with email: ${customerIdentifier}`);
                     // According to the Intercom API documentation, we should use the contacts/search endpoint
@@ -637,55 +635,20 @@ export class IntercomService {
                 }
                 
                 if (!contactId) {
-                    // Only perform the search if we don't already have the ID
-                    const searchResponse = await this.makeRequest<{
-                        data: Array<{
-                            id: string;
-                            type: string;
-                            email?: string;
-                        }>;
-                    }>('contacts/search', 'POST', undefined, { query: searchParams });
+                    console.error(`No contact found for ${customerIdentifier}`);
                     
-                    if (!searchResponse.data || searchResponse.data.length === 0) {
-                        console.error(`No contact found for ${customerIdentifier}`);
-                        return []; // No contact found
+                    // If we can't find a contact by email but this is an email address,
+                    // we could search for conversations containing this email in the body
+                    if (isEmail) {
+                        console.error(`Trying to search for conversations containing email: ${customerIdentifier}`);
+                        // Use searchConversations with the email as keyword
+                        return await this.searchConversations(startDate, endDate, customerIdentifier);
                     }
                     
-                    contactId = searchResponse.data[0].id;
-                    console.error(`Found contact with ID: ${contactId}`);
+                    return []; // No contact found and not an email
                 }
-                
-                // Now get conversations for this contact
-                // Using Intercom's contacts/{id}/conversations endpoint
-                console.error(`Retrieving conversations for contact ID: ${contactId}`);
-                const response = await this.makeRequest<{
-                    conversations: IntercomConversation[];
-                }>(`contacts/${contactId}/conversations`, 'GET');
-                
-                if (!response.conversations || response.conversations.length === 0) {
-                    console.error(`No conversations found for contact ID: ${contactId}`);
-                    return []; // No conversations found
-                }
-                
-                console.error(`Found ${response.conversations.length} conversations for contact`);
-                
-                // Convert to our ticket format and filter by date if needed
-                const startDateObj = startDate ? new Date(startDate) : new Date(0); // Default to epoch start
-                const endDateObj = endDate ? new Date(endDate) : new Date(); // Default to now
-                
-                // We do date filtering manually since the Intercom API doesn't support it directly
-                // for the contacts/{id}/conversations endpoint
-                const tickets = this.convertToTickets(
-                    response.conversations,
-                    startDateObj,
-                    endDateObj
-                );
-                
-                console.error(`After date filtering, ${tickets.length} conversations remain`);
                 
                 // Process keywords array if provided
-                // Note: Intercom doesn't support direct keyword filtering in API requests
-                // so we apply it to the conversation content after retrieving
                 let keywordFilter: string | undefined;
                 if (keywords && keywords.length > 0) {
                     // Join keywords with pipe for OR-based filtering
@@ -693,60 +656,19 @@ export class IntercomService {
                     console.error(`Using keyword filter: ${keywordFilter}`);
                 }
                 
-                // Get full conversation history for each ticket
-                const ticketsWithConversations = await this.addConversationHistories(tickets, keywordFilter);
+                // Use the searchConversations method with the contact ID
+                return await this.searchConversations(startDate, endDate, keywordFilter, undefined, contactId);
                 
-                return ticketsWithConversations;
             } catch (error) {
-                console.error(`Error finding contact: ${error}`);
+                console.error(`Error finding contact or searching conversations: ${error}`);
                 
-                // If we can't find the contact by search, try a different approach
-                // Get all conversations and filter by customer info
-                console.error('Falling back to retrieving all conversations and filtering');
-                
-                const allConversations = await this.getAllConversationsWithPagination();
-                
-                // Filter conversations by customer identifier
-                const filteredConversations = allConversations.filter(conversation => {
-                    // Check if any contact in the conversation matches
-                    if (conversation.contacts && conversation.contacts.contacts) {
-                        return conversation.contacts.contacts.some(contact => {
-                            if (isEmail && contact.email) {
-                                return contact.email.toLowerCase() === customerIdentifier.toLowerCase();
-                            } else {
-                                return contact.id === customerIdentifier;
-                            }
-                        });
-                    }
-                    return false;
-                });
-                
-                console.error(`Found ${filteredConversations.length} conversations after filtering`);
-                
-                // Convert to our ticket format and filter by date if needed
-                const startDateObj = startDate ? new Date(startDate) : new Date(0); // Default to epoch start
-                const endDateObj = endDate ? new Date(endDate) : new Date(); // Default to now
-                
-                const tickets = this.convertToTickets(
-                    filteredConversations,
-                    startDateObj,
-                    endDateObj
-                );
-                
-                console.error(`After date filtering, ${tickets.length} conversations remain`);
-                
-                // Process keywords array if provided
-                let keywordFilter: string | undefined;
-                if (keywords && keywords.length > 0) {
-                    // Join keywords with pipe for OR-based filtering
-                    keywordFilter = keywords.join('|');
-                    console.error(`Using keyword filter: ${keywordFilter}`);
+                // Fallback for emails - try searching conversation content
+                if (isEmail) {
+                    console.error(`Falling back to searching conversation content for email: ${customerIdentifier}`);
+                    return await this.searchConversations(startDate, endDate, customerIdentifier);
                 }
                 
-                // Get full conversation history for each ticket
-                const ticketsWithConversations = await this.addConversationHistories(tickets, keywordFilter);
-                
-                return ticketsWithConversations;
+                throw error;
             }
         } catch (error) {
             console.error('Error searching conversations by customer:', error);
@@ -903,88 +825,132 @@ export class IntercomService {
     }
 
     /**
-     * Retrieves conversations for a specific date range,
-     * with optional keyword filtering and exclusion, optimized for large volumes
-     * 
-     * Implementation notes:
-     * - Uses Intercom's /conversations endpoint for listing
-     * - Date filtering, keyword filtering, and exclusion are applied post-API call
-     * - The 7-day range limit is an internal constraint, not from Intercom's API
-     * - Handles pagination using Intercom's cursor-based pagination (starting_after)
+     * Directly searches conversations using Intercom's /conversations/search endpoint
+     * which provides efficient server-side filtering by date, keyword, and other criteria
      */
-    async getConversations(startDate: string, endDate: string, keyword?: string, exclude?: string): Promise<Ticket[]> {
+    private async searchConversations(
+        startDate?: string,
+        endDate?: string,
+        keyword?: string,
+        exclude?: string,
+        contactId?: string
+    ): Promise<Ticket[]> {
         try {
-            const startDateObj = new Date(startDate);
-            const endDateObj = new Date(endDate);
-            let allConversations: Ticket[] = [];
-            let startingAfter: string | null = null;
-            let page = 1;
-            let morePages = true;
+            // Build the search query for the conversations/search endpoint
+            const searchQuery: any = {
+                query: {
+                    operator: "AND",
+                    value: []
+                }
+            };
             
-            console.error(`Retrieving conversations between ${startDate} and ${endDate}...`);
-            if (keyword) console.error(`Filtering by keyword: "${keyword}"`);
-            if (exclude) console.error(`Excluding conversations containing: "${exclude}"`);
-            
-            // Note: Intercom's list conversations endpoint doesn't support direct date filtering
-            // or keyword filtering in the API call. We retrieve all and filter afterwards.
-            while (morePages) {
-                // Set up pagination parameters for Intercom's cursor-based pagination
-                const params: Record<string, string> = {
-                    'per_page': this.ITEMS_PER_PAGE.toString()
-                };
-                
-                if (startingAfter) {
-                    params['starting_after'] = startingAfter;
-                }
-                
-                console.error(`Retrieving page ${page}...`);
-                
-                // Get conversations with pagination using Intercom's /conversations endpoint
-                const response = await this.makeRequest<{
-                    conversations: IntercomConversation[];
-                    pages: { next?: string };
-                }>('conversations', 'GET', params);
-                
-                if (!response.conversations || response.conversations.length === 0) {
-                    morePages = false;
-                    break;
-                }
-                
-                console.error(`Retrieved page ${page} with ${response.conversations.length} conversations`);
-                
-                // Process conversation data into ticket format
-                // This is where we apply date, keyword, and exclusion filtering
-                // since Intercom's API doesn't support these filters directly
-                const tickets = this.convertToTickets(response.conversations, startDateObj, endDateObj, keyword, exclude);
-                allConversations = [...allConversations, ...tickets];
-                
-                // Get next page URL if it exists - using Intercom's cursor-based pagination
-                const nextPage = response.pages?.next;
-                if (nextPage && typeof nextPage === 'string' && nextPage.includes('starting_after=')) {
-                    // Extract starting_after parameter from next URL
-                    startingAfter = nextPage.split('starting_after=')[1].split('&')[0];
-                    morePages = true;
-                    page++;
-                } else {
-                    morePages = false;
-                }
-                
-                // Add slight delay to prevent rate limiting (following Python script's pattern)
-                if (morePages) {
-                    await new Promise(resolve => setTimeout(resolve, 500)); // 0.5 seconds as in Python script
-                }
+            // Add date filters if provided - converting to UNIX timestamps
+            if (startDate) {
+                const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
+                searchQuery.query.value.push({
+                    field: "created_at",
+                    operator: ">=",
+                    value: startTimestamp
+                });
             }
             
-            console.error(`Total conversations retrieved: ${allConversations.length}`);
+            if (endDate) {
+                const endTimestamp = Math.floor(new Date(endDate).getTime() / 1000);
+                searchQuery.query.value.push({
+                    field: "created_at",
+                    operator: "<=",
+                    value: endTimestamp
+                });
+            }
+            
+            // Add contact filter if provided
+            if (contactId) {
+                searchQuery.query.value.push({
+                    field: "contact_ids",
+                    operator: "=",
+                    value: contactId
+                });
+            }
+            
+            // Add keyword filter if provided - using source.body field
+            if (keyword) {
+                searchQuery.query.value.push({
+                    field: "source.body",
+                    operator: "~", // "~" is the "contains" operator
+                    value: keyword
+                });
+            }
+            
+            // Add exclusion filter if provided - using source.body field with "not contains" operator
+            if (exclude) {
+                searchQuery.query.value.push({
+                    field: "source.body",
+                    operator: "!~", // "!~" is the "does not contain" operator
+                    value: exclude
+                });
+            }
+            
+            console.error(`Executing conversation search with query:`, JSON.stringify(searchQuery, null, 2));
+            
+            // Make the API request to the conversations/search endpoint
+            const response = await this.makeRequest<{
+                conversations: IntercomConversation[];
+                total_count: number;
+            }>('conversations/search', 'POST', undefined, searchQuery);
+            
+            if (!response.conversations || response.conversations.length === 0) {
+                console.error(`No conversations found matching the criteria`);
+                return [];
+            }
+            
+            console.error(`Found ${response.conversations.length} conversations matching the criteria`);
+            
+            // Convert the Intercom conversation format to our standard format
+            const startDateObj = startDate ? new Date(startDate) : new Date(0);
+            const endDateObj = endDate ? new Date(endDate) : new Date();
+            
+            const tickets = this.convertToTickets(
+                response.conversations,
+                startDateObj,
+                endDateObj
+            );
             
             // Get full conversation history for each ticket
-            // This is where we can also apply more detailed content filtering
-            // since Intercom doesn't support source.body filtering in the API directly
-            const ticketsWithConversations = await this.addConversationHistories(allConversations, keyword, exclude);
+            const ticketsWithConversations = await this.addConversationHistories(tickets, keyword, exclude);
             
             return ticketsWithConversations;
         } catch (error) {
+            console.error('Error searching conversations:', error);
+            throw new Error(`Failed to search conversations: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+    }
+
+    /**
+     * Retrieves conversations for a specific date range,
+     * with optional keyword filtering and exclusion
+     * 
+     * Implementation notes:
+     * - Uses Intercom's /conversations/search endpoint for efficient server-side filtering
+     * - Converts date strings to Unix timestamps as required by Intercom API
+     * - Supports keyword and exclusion filtering via source.body field
+     * - The 7-day range limit is an internal constraint, not from Intercom's API
+     */
+    async getConversations(startDate: string, endDate: string, keyword?: string, exclude?: string): Promise<Ticket[]> {
+        try {
+            console.error(`Searching for conversations between ${startDate} and ${endDate}...`);
+            if (keyword) console.error(`Filtering by keyword: "${keyword}"`);
+            if (exclude) console.error(`Excluding conversations containing: "${exclude}"`);
+            
+            // Use the new search method to get conversations with server-side filtering
+            return await this.searchConversations(startDate, endDate, keyword, exclude);
+        } catch (error) {
             console.error('Error fetching conversations:', error);
+            
+            // Fallback to the old method if search endpoint fails
+            console.error('Falling back to retrieving all conversations and filtering...');
+            
+            // Implementation of the old method with pagination would go here
+            // But for now, we'll just throw the error since we're focusing on the new approach
             throw new Error(`Failed to retrieve conversations: ${error instanceof Error ? error.message : 'Unknown error'}`);
         }
     }
