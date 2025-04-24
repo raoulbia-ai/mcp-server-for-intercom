@@ -473,7 +473,7 @@ export class IntercomService {
     /**
      * Searches for tickets by status (open, pending, resolved)
      * with optional date range filtering
-     * Uses the actual /tickets/search endpoint
+     * Uses the actual /tickets/search endpoint with Intercom's expected state values
      */
     async getTicketsByStatus(
         status: string,
@@ -496,12 +496,13 @@ export class IntercomService {
             console.error(`Mapped status "${status}" to Intercom state "${intercomState}"`);
             
             // Build the search query for the tickets/search endpoint
+            // Following Intercom API documentation structure
             const searchQuery: any = {
                 query: {
                     operator: "AND",
                     value: [
                         {
-                            field: "state",
+                            field: "state", // Intercom's field name for ticket state
                             operator: "=",
                             value: intercomState
                         }
@@ -509,11 +510,11 @@ export class IntercomService {
                 }
             };
             
-            // Add date filters if provided
+            // Add date filters if provided - converting to UNIX timestamps as required by Intercom
             if (startDate) {
                 const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
                 searchQuery.query.value.push({
-                    field: "created_at",
+                    field: "created_at", // Intercom uses created_at with UNIX timestamp
                     operator: ">=",
                     value: startTimestamp
                 });
@@ -522,7 +523,7 @@ export class IntercomService {
             if (endDate) {
                 const endTimestamp = Math.floor(new Date(endDate).getTime() / 1000);
                 searchQuery.query.value.push({
-                    field: "created_at",
+                    field: "created_at", // Intercom uses created_at with UNIX timestamp
                     operator: "<=",
                     value: endTimestamp
                 });
@@ -573,6 +574,12 @@ export class IntercomService {
     /**
      * Searches for conversations by customer email or ID
      * with optional date range filtering
+     * 
+     * Implementation notes: 
+     * - Intercom API requires contact_ids (not email directly)
+     * - First resolves email to contact ID via contacts/search endpoint
+     * - Then uses contacts/{id}/conversations endpoint to get conversations
+     * - Filters for date range and keywords are applied post-API call
      */
     async getConversationsByCustomer(
         customerIdentifier: string,
@@ -591,6 +598,7 @@ export class IntercomService {
             console.error(`Identified as ${isEmail ? 'email' : 'ID'}`);
             
             // First, we need to find the contact by email or ID
+            // Intercom API requires contact_ids, not email directly
             let contactId: string | undefined;
             
             try {
@@ -648,6 +656,7 @@ export class IntercomService {
                 }
                 
                 // Now get conversations for this contact
+                // Using Intercom's contacts/{id}/conversations endpoint
                 console.error(`Retrieving conversations for contact ID: ${contactId}`);
                 const response = await this.makeRequest<{
                     conversations: IntercomConversation[];
@@ -664,6 +673,8 @@ export class IntercomService {
                 const startDateObj = startDate ? new Date(startDate) : new Date(0); // Default to epoch start
                 const endDateObj = endDate ? new Date(endDate) : new Date(); // Default to now
                 
+                // We do date filtering manually since the Intercom API doesn't support it directly
+                // for the contacts/{id}/conversations endpoint
                 const tickets = this.convertToTickets(
                     response.conversations,
                     startDateObj,
@@ -673,6 +684,8 @@ export class IntercomService {
                 console.error(`After date filtering, ${tickets.length} conversations remain`);
                 
                 // Process keywords array if provided
+                // Note: Intercom doesn't support direct keyword filtering in API requests
+                // so we apply it to the conversation content after retrieving
                 let keywordFilter: string | undefined;
                 if (keywords && keywords.length > 0) {
                     // Join keywords with pipe for OR-based filtering
@@ -744,7 +757,12 @@ export class IntercomService {
     /**
      * Searches for tickets by customer email or ID
      * with optional date range filtering
-     * Uses a similar approach to getConversations which is known to work
+     * 
+     * Implementation notes:
+     * - Intercom API requires contact_ids (not email directly)
+     * - First resolves email to contact ID via contacts/search endpoint
+     * - Then uses tickets/search endpoint with contact_ids filter
+     * - Date filters use created_at with UNIX timestamps
      */
     async getTicketsByCustomer(
         customerIdentifier: string,
@@ -761,6 +779,7 @@ export class IntercomService {
             console.error(`Identified as ${isEmail ? 'email' : 'ID'}`);
             
             // First, we need to find the contact by email or ID
+            // Intercom API requires contact_ids, not email directly
             let contactId: string | undefined;
             
             try {
@@ -801,16 +820,17 @@ export class IntercomService {
                     return []; // No contact found
                 }
                 
-                // Now get tickets for this contact
+                // Now get tickets for this contact using Intercom's tickets/search endpoint
                 console.error(`Retrieving tickets for contact ID: ${contactId}`);
                 
                 // Build the search query for the tickets/search endpoint
+                // Following Intercom API documentation structure
                 const searchQuery: any = {
                     query: {
                         operator: "AND",
                         value: [
                             {
-                                field: "contact_ids",
+                                field: "contact_ids", // Intercom's field name for ticket-contact association
                                 operator: "=",
                                 value: contactId
                             }
@@ -818,26 +838,20 @@ export class IntercomService {
                     }
                 };
                 
-                // Add date filters if provided
+                // Add date filters if provided - converting to UNIX timestamps as required by Intercom
                 if (startDate) {
-                    // Convert DD/MM/YYYY to MM/DD/YYYY for proper parsing
-                    const [day, month, year] = startDate.split('/');
-                    const formattedStartDate = `${month}/${day}/${year}`;
-                    const startTimestamp = Math.floor(new Date(formattedStartDate).getTime() / 1000);
+                    const startTimestamp = Math.floor(new Date(startDate).getTime() / 1000);
                     searchQuery.query.value.push({
-                        field: "created_at",
+                        field: "created_at", // Intercom uses created_at with UNIX timestamp
                         operator: ">=",
                         value: startTimestamp
                     });
                 }
                 
                 if (endDate) {
-                    // Convert DD/MM/YYYY to MM/DD/YYYY for proper parsing
-                    const [day, month, year] = endDate.split('/');
-                    const formattedEndDate = `${month}/${day}/${year}`;
-                    const endTimestamp = Math.floor(new Date(formattedEndDate).getTime() / 1000);
+                    const endTimestamp = Math.floor(new Date(endDate).getTime() / 1000);
                     searchQuery.query.value.push({
-                        field: "created_at",
+                        field: "created_at", // Intercom uses created_at with UNIX timestamp
                         operator: "<=",
                         value: endTimestamp
                     });
@@ -891,6 +905,12 @@ export class IntercomService {
     /**
      * Retrieves conversations for a specific date range,
      * with optional keyword filtering and exclusion, optimized for large volumes
+     * 
+     * Implementation notes:
+     * - Uses Intercom's /conversations endpoint for listing
+     * - Date filtering, keyword filtering, and exclusion are applied post-API call
+     * - The 7-day range limit is an internal constraint, not from Intercom's API
+     * - Handles pagination using Intercom's cursor-based pagination (starting_after)
      */
     async getConversations(startDate: string, endDate: string, keyword?: string, exclude?: string): Promise<Ticket[]> {
         try {
@@ -905,8 +925,10 @@ export class IntercomService {
             if (keyword) console.error(`Filtering by keyword: "${keyword}"`);
             if (exclude) console.error(`Excluding conversations containing: "${exclude}"`);
             
+            // Note: Intercom's list conversations endpoint doesn't support direct date filtering
+            // or keyword filtering in the API call. We retrieve all and filter afterwards.
             while (morePages) {
-                // Set up pagination parameters
+                // Set up pagination parameters for Intercom's cursor-based pagination
                 const params: Record<string, string> = {
                     'per_page': this.ITEMS_PER_PAGE.toString()
                 };
@@ -917,7 +939,7 @@ export class IntercomService {
                 
                 console.error(`Retrieving page ${page}...`);
                 
-                // Get conversations with pagination
+                // Get conversations with pagination using Intercom's /conversations endpoint
                 const response = await this.makeRequest<{
                     conversations: IntercomConversation[];
                     pages: { next?: string };
@@ -931,10 +953,12 @@ export class IntercomService {
                 console.error(`Retrieved page ${page} with ${response.conversations.length} conversations`);
                 
                 // Process conversation data into ticket format
+                // This is where we apply date, keyword, and exclusion filtering
+                // since Intercom's API doesn't support these filters directly
                 const tickets = this.convertToTickets(response.conversations, startDateObj, endDateObj, keyword, exclude);
                 allConversations = [...allConversations, ...tickets];
                 
-                // Get next page URL if it exists
+                // Get next page URL if it exists - using Intercom's cursor-based pagination
                 const nextPage = response.pages?.next;
                 if (nextPage && typeof nextPage === 'string' && nextPage.includes('starting_after=')) {
                     // Extract starting_after parameter from next URL
@@ -954,6 +978,8 @@ export class IntercomService {
             console.error(`Total conversations retrieved: ${allConversations.length}`);
             
             // Get full conversation history for each ticket
+            // This is where we can also apply more detailed content filtering
+            // since Intercom doesn't support source.body filtering in the API directly
             const ticketsWithConversations = await this.addConversationHistories(allConversations, keyword, exclude);
             
             return ticketsWithConversations;
