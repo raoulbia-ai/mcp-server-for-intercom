@@ -4,36 +4,48 @@ ENV DEBIAN_FRONTEND=noninteractive \
     GLAMA_VERSION="0.2.0" \
     PATH="/home/service-user/.local/bin:${PATH}"
 
-# Create user and set up environment in one RUN to reduce layers
+# Create user and set up environment
 RUN groupadd -r service-user && \
     useradd -u 1987 -r -m -g service-user service-user && \
     mkdir -p /home/service-user/.local/bin /app && \
-    chown -R service-user:service-user /home/service-user /app && \
-    # Install base dependencies
-    apt-get update && \
+    chown -R service-user:service-user /home/service-user /app
+
+# Install system dependencies
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        build-essential \
-        curl \
-        wget \
-        software-properties-common \
-        libssl-dev \
-        zlib1g-dev \
-        git && \
-    # Install Node.js
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    build-essential \
+    curl \
+    wget \
+    ca-certificates \
+    gnupg \
+    software-properties-common \
+    libssl-dev \
+    zlib1g-dev \
+    git && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Node.js
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
+    apt-get update && \
     apt-get install -y nodejs && \
     apt-get clean && \
-    # Install global npm packages
-    npm install -g mcp-proxy@2.10.6 pnpm@9.15.5 bun@1.1.42 && \
-    # Install uv and Python
-    curl -LsSf https://astral.sh/uv/install.sh | UV_INSTALL_DIR="/usr/local/bin" sh && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install global npm packages
+RUN npm install -g mcp-proxy@2.10.6 && \
+    npm install -g pnpm@9.15.5 && \
+    npm install -g bun@1.1.42
+
+# Install Python with uv
+RUN curl -LsSf https://astral.sh/uv/install.sh | bash && \
+    export PATH="/root/.cargo/bin:$PATH" && \
     uv python install 3.13 --preview --default && \
-    ln -s $(uv python find) /usr/local/bin/python && \
-    # Final cleanup
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
-    # Install Python for service user
-    su - service-user -c "uv python install 3.13 --default --preview"
+    ln -s $(which python3) /usr/local/bin/python && \
+    python --version
+
+# Final cleanup
+RUN apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 USER service-user
 
