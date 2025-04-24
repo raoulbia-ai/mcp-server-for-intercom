@@ -79,14 +79,14 @@ RUN mkdir -p /app/public/.well-known && \
     cp /app/.well-known/glama.json /app/public/.well-known/glama.json && \
     cat /app/public/.well-known/glama.json
 
-# Install http-server
-RUN npm install -g http-server
+# Install http-server locally instead of globally
+RUN cd /app && npm install http-server --save-dev
 
 # Create startup script
 RUN echo '#!/bin/bash\n\
 echo "Starting Glama discovery server on port 8080..."\n\
 # Start the http-server in the background for Glama discovery\n\
-http-server /app/public -p 8080 --cors -d false -i false -c-1 -s &\n\
+npx http-server /app/public -p 8080 --cors -d false -i false -c-1 -s &\n\
 HTTP_SERVER_PID=$!\n\
 sleep 2\n\
 # Verify the Glama discovery server is running\n\

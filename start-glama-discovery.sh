@@ -14,6 +14,6 @@ fi
 
 # Start HTTP server
 echo "Starting HTTP server on port 8080"
-http-server ./public -p 8080 --cors -d false -i false -c-1 -s
+npx http-server ./public -p 8080 --cors -d false -i false -c-1 -s
 
 # Note: Keep this script running in the terminal to serve the discovery endpoint
