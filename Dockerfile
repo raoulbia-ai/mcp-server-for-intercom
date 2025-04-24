@@ -76,16 +76,22 @@ ENV MCP_SERVER_NAME="Intercom MCP Proxy" \
 
 # Create public directory for static serving
 RUN mkdir -p /app/public/.well-known && \
-    cp /app/.well-known/glama.json /app/public/.well-known/glama.json
+    cp /app/.well-known/glama.json /app/public/.well-known/glama.json && \
+    cat /app/public/.well-known/glama.json
 
 # Install http-server
 RUN npm install -g http-server
 
 # Create startup script
 RUN echo '#!/bin/bash\n\
+echo "Starting Glama discovery server on port 8080..."\n\
 # Start the http-server in the background for Glama discovery\n\
 http-server /app/public -p 8080 --cors -d false -i false -c-1 -s &\n\
 HTTP_SERVER_PID=$!\n\
+sleep 2\n\
+# Verify the Glama discovery server is running\n\
+curl -s http://localhost:8080/.well-known/glama.json || echo "WARNING: Glama discovery endpoint not accessible!"\n\
+echo "Starting MCP server on port 3000..."\n\
 # Start the MCP server in the foreground\n\
 mcp-proxy --host=0.0.0.0 --port=3000 --allow-origin=* node build/index.js\n\
 # Cleanup\n\
