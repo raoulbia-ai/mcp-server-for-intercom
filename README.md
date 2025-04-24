@@ -37,19 +37,16 @@ intercom-mcp
 
 #### Using Docker
 ```bash
-# Make sure Docker Desktop or Docker service is running first
+# Start Docker (if not already running)
+# On Windows: Start Docker Desktop application
+# On Linux: sudo systemctl start docker
 
 # Build the Docker image
 docker build -t mcp-intercom .
 
 # Run the container with your API token
 docker run --rm -it -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom:latest
-
-# For Windows Command Prompt
-docker run --rm -e INTERCOM_ACCESS_TOKEN=your_token_here mcp-intercom:latest
 ```
-
-> **Note**: If you get an error like `error during connect: ... The system cannot find the file specified`, make sure Docker Desktop is running or the Docker service is started.
 
 ## Available MCP Tools
 
