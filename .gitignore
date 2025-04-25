@@ -75,3 +75,7 @@ volumes/
 # Project specific files
 memory-bank/
 .roo/
+.well-known/
+**/config.*.js
+**/credentials.json
+**/tmp/
