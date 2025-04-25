@@ -58,6 +58,13 @@ WORKDIR /app
 RUN git clone https://github.com/raoulbia-ai/mcp-server-for-intercom . && \
     git checkout $(git rev-parse HEAD)
 
+# Create .well-known directory
+RUN mkdir -p /app/.well-known
+
+# Add GLAMA discovery file and server
+COPY .well-known /app/.well-known
+COPY glama-discovery-server.cjs /app/glama-discovery-server.cjs
+
 # Install dependencies and build
 RUN pnpm install && \
     pnpm build
@@ -67,6 +74,29 @@ ENV MCP_SERVER_NAME="Intercom MCP Proxy" \
     MCP_SERVER_VERSION="1.2.0" \
     MCP_ALLOWED_ORIGINS="*"
 
-# Use mcp-proxy to run the server executable with proper arguments
-# Host 0.0.0.0 makes the server accessible outside the container
-CMD ["mcp-proxy", "--host=0.0.0.0", "--port=8080", "--allow-origin=*", "node", "build/index.js"]
+# Create public directory for static serving
+RUN mkdir -p /app/public/.well-known && \
+    cp /app/.well-known/glama.json /app/public/.well-known/glama.json && \
+    cat /app/public/.well-known/glama.json
+
+# Install http-server locally instead of globally
+RUN cd /app && npm install http-server --save-dev
+
+# Create startup script
+RUN echo '#!/bin/bash\n\
+echo "Starting Glama discovery server on port 8080..."\n\
+# Start the http-server in the background for Glama discovery\n\
+npx http-server /app/public -p 8080 --cors -d false -i false -c-1 -s &\n\
+HTTP_SERVER_PID=$!\n\
+sleep 2\n\
+# Verify the Glama discovery server is running\n\
+curl -s http://localhost:8080/.well-known/glama.json || echo "WARNING: Glama discovery endpoint not accessible!"\n\
+echo "Starting MCP server on port 3000..."\n\
+# Start the MCP server in the foreground\n\
+mcp-proxy --host=0.0.0.0 --port=3000 --allow-origin=* node build/index.js\n\
+# Cleanup\n\
+kill $HTTP_SERVER_PID\n\
+' > /app/start.sh && chmod +x /app/start.sh
+
+# Use the startup script to run both servers
+CMD ["/app/start.sh"]
