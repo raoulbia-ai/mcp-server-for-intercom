@@ -47,14 +47,16 @@ The default Docker configuration is optimized for Glama compatibility:
 # Build the image
 docker build -t mcp-intercom .
 
-# Run the container with your API token and port mapping
-docker run --rm -it -p 8080:8080 -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom:latest
+# Run the container with your API token and port mappings
+docker run --rm -it -p 3000:3000 -p 8080:8080 -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom:latest
 ```
 
 **Validation Steps:**
 ```bash
-# Test the SSE endpoint
-curl -v http://localhost:8080/sse
+# Test the server status
+curl -v http://localhost:8080/.well-known/glama.json
+# Test the MCP endpoint
+curl -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"mcp.capabilities"}' http://localhost:3000
 ```
 
 ##### Alternative Standard Version
@@ -65,7 +67,7 @@ If you prefer a lighter version without Glama-specific dependencies:
 docker build -t mcp-intercom-standard -f Dockerfile.standard .
 
 # Run the standard container
-docker run --rm -it -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom-standard:latest
+docker run --rm -it -p 3000:3000 -p 8080:8080 -e INTERCOM_ACCESS_TOKEN="your_token_here" mcp-intercom-standard:latest
 ```
 
 The default version includes specific dependencies and configurations required for integration with the Glama platform, while the standard version is more lightweight.
