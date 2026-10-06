@@ -1,8 +1,16 @@
 # MCP Server for Intercom
 
-<a href="https://glama.ai/mcp/servers/@raoulbia-ai/mcp-server-for-intercom">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/@raoulbia-ai/mcp-server-for-intercom/badge" />
-</a>
+<p>
+  <a href="https://glama.ai/mcp/servers/@raoulbia-ai/mcp-server-for-intercom">
+    <img width="380" height="200" src="https://glama.ai/mcp/servers/raoulbia-ai/mcp-server-for-intercom/badge" alt="MCP Server for Intercom on Glama" />
+  </a>
+</p>
+
+<p>
+  <a href="https://spark.entire.vc/mcps/vb-intercom?utm_source=github&amp;utm_medium=readme&amp;utm_campaign=badge&amp;utm_content=flat-orange-none">
+    <img height="20" src="https://spark.entire.vc/badges/vb-intercom/spark.svg?style=flat&amp;theme=orange&amp;metric=none" alt="Listed on Spark" />
+  </a>
+</p>
 
 An MCP-compliant server that enables AI assistants to access and analyze customer support data from Intercom.
 
